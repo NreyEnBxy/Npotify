@@ -59,6 +59,12 @@ interface Song {
   url: string;
 }
 
+interface User {
+  name: string;
+  email: string;
+  password?: string;
+}
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -68,7 +74,7 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'premium'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'premium' | 'library'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -77,7 +83,88 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
 
+  // Auth States
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [likedSongIds, setLikedSongIds] = useState<number[]>([]);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Load user and likes from localStorage
+  useEffect(() => {
+    const savedUser = localStorage.getItem('spotify_user');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      setCurrentUser(user);
+      
+      const savedLikes = localStorage.getItem(`spotify_likes_${user.email}`);
+      if (savedLikes) {
+        setLikedSongIds(JSON.parse(savedLikes));
+      }
+    }
+  }, []);
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authMode === 'signup') {
+      if (!authForm.name || !authForm.email || !authForm.password) {
+        alert("Please fill all fields");
+        return;
+      }
+      const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
+      if (users.find((u: User) => u.email === authForm.email)) {
+        alert("User already exists");
+        return;
+      }
+      const newUser = { name: authForm.name, email: authForm.email, password: authForm.password };
+      users.push(newUser);
+      localStorage.setItem('spotify_all_users', JSON.stringify(users));
+      localStorage.setItem('spotify_user', JSON.stringify({ name: newUser.name, email: newUser.email }));
+      setCurrentUser({ name: newUser.name, email: newUser.email });
+      setShowAuthModal(false);
+    } else {
+      const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
+      const user = users.find((u: User) => u.email === authForm.email && u.password === authForm.password);
+      if (user) {
+        localStorage.setItem('spotify_user', JSON.stringify({ name: user.name, email: user.email }));
+        setCurrentUser({ name: user.name, email: user.email });
+        
+        const savedLikes = localStorage.getItem(`spotify_likes_${user.email}`);
+        if (savedLikes) {
+          setLikedSongIds(JSON.parse(savedLikes));
+        } else {
+          setLikedSongIds([]);
+        }
+        setShowAuthModal(false);
+      } else {
+        alert("Invalid email or password");
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('spotify_user');
+    setCurrentUser(null);
+    setLikedSongIds([]);
+    setIsSidebarOpen(false);
+  };
+
+  const toggleLike = (songId: number) => {
+    if (!currentUser) {
+      setAuthMode('login');
+      setShowAuthModal(true);
+      return;
+    }
+
+    const newLikes = likedSongIds.includes(songId)
+      ? likedSongIds.filter(id => id !== songId)
+      : [...likedSongIds, songId];
+    
+    setLikedSongIds(newLikes);
+    localStorage.setItem(`spotify_likes_${currentUser.email}`, JSON.stringify(newLikes));
+  };
 
   const downloadSong = async (song: Song) => {
     try {
@@ -432,6 +519,76 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : activeTab === 'library' ? (
+          <div className="p-4 pt-6">
+            <div className="flex items-center gap-4 mb-6">
+              <div 
+                onClick={() => setIsSidebarOpen(true)}
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+              >
+                <img 
+                  src="https://files.catbox.moe/uxcbs7.jpeg" 
+                  className="w-full h-full object-cover" 
+                  alt="IShowSpeed"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <h2 className="text-3xl font-bold tracking-tight">Your Library</h2>
+            </div>
+
+            {!currentUser ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Heart size={60} className="text-spotify-gray mb-4" />
+                <h3 className="text-xl font-bold mb-2">Login to see your library</h3>
+                <p className="text-spotify-gray mb-6">Save your favorite songs and access them anytime.</p>
+                <button 
+                  onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                  className="bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition-transform"
+                >
+                  LOG IN
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 mb-6 bg-gradient-to-br from-[#450af5] to-[#c4efd9] p-4 rounded-lg">
+                  <div className="w-12 h-12 bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center rounded shadow-lg">
+                    <Heart size={24} className="fill-white text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Liked Songs</h3>
+                    <p className="text-sm opacity-80">{likedSongIds.length} songs</p>
+                  </div>
+                </div>
+
+                {likedSongIds.length > 0 ? (
+                  songs.filter(s => likedSongIds.includes(s.id)).map((song) => (
+                    <div 
+                      key={song.id} 
+                      onClick={() => playSong(song.id)}
+                      className="flex items-center gap-3 cursor-pointer group"
+                    >
+                      <img src={song.cover} className="w-12 h-12 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className={`text-sm font-medium truncate ${currentSongIndex === song.id ? 'text-spotify-green' : 'text-white'}`}>
+                          {song.title}
+                        </span>
+                        <span className="text-xs text-spotify-gray truncate">{song.artist}</span>
+                      </div>
+                      <Heart 
+                        size={18} 
+                        className="text-spotify-green fill-current" 
+                        onClick={(e) => { e.stopPropagation(); toggleLike(song.id); }}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-20">
+                    <p className="text-spotify-gray">You haven't liked any songs yet.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="h-full flex flex-col">
             {!showPremiumFrame ? (
@@ -514,35 +671,131 @@ export default function App() {
                     />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl">IShowSpeed</h3>
-                    <p className="text-spotify-gray text-sm">View Profile</p>
+                    <h3 className="font-bold text-xl">{currentUser ? currentUser.name : 'Guest User'}</h3>
+                    <p className="text-spotify-gray text-sm">{currentUser ? currentUser.email : 'Login to save your data'}</p>
                   </div>
                 </div>
 
                 <nav className="flex-1 space-y-4">
-                  <div className="py-2 px-4 rounded-md bg-white/5 hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
-                    <Music size={20} className="text-spotify-green" />
-                    <span className="font-medium">My Playlists</span>
-                  </div>
-                  <div className="py-2 px-4 rounded-md hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
-                    <Heart size={20} />
-                    <span className="font-medium">Liked Songs</span>
-                  </div>
-                  <div className="py-2 px-4 rounded-md hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
-                    <Circle size={20} />
-                    <span className="font-medium">Settings</span>
-                  </div>
+                  <button 
+                    onClick={() => { setActiveTab('home'); setIsSidebarOpen(false); }}
+                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
+                  >
+                    <Home size={24} />
+                    Home
+                  </button>
+                  <button 
+                    onClick={() => { setActiveTab('library'); setIsSidebarOpen(false); }}
+                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
+                  >
+                    <Heart size={24} />
+                    Liked Songs
+                  </button>
+                  <button 
+                    onClick={() => { setActiveTab('premium'); setIsSidebarOpen(false); }}
+                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
+                  >
+                    <Music size={24} />
+                    Premium
+                  </button>
                 </nav>
 
-                <button 
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="mt-auto py-3 w-full bg-white/10 rounded-full font-bold hover:bg-white/20 transition-colors"
-                >
-                  Close
-                </button>
+                <div className="pt-6 border-t border-white/10">
+                  {currentUser ? (
+                    <button 
+                      onClick={handleLogout}
+                      className="flex items-center gap-4 w-full text-left font-bold text-lg text-red-500 hover:text-red-400 transition-colors"
+                    >
+                      <ArrowLeft size={24} />
+                      Log Out
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => { setShowAuthModal(true); setIsSidebarOpen(false); }}
+                      className="flex items-center gap-4 w-full text-left font-bold text-lg text-spotify-green hover:text-spotify-green/80 transition-colors"
+                    >
+                      <CheckCircle2 size={24} />
+                      Log In / Sign Up
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Auth Modal */}
+      <AnimatePresence>
+        {showAuthModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAuthModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md bg-spotify-base rounded-2xl p-8 border border-white/10 shadow-2xl"
+            >
+              <h2 className="text-3xl font-bold mb-6 text-center">
+                {authMode === 'login' ? 'Welcome back' : 'Create account'}
+              </h2>
+              <form onSubmit={handleAuth} className="space-y-4">
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">Name</label>
+                    <input 
+                      type="text" 
+                      required
+                      className="w-full bg-[#333] border-none rounded-md py-3 px-4 focus:ring-2 focus:ring-spotify-green outline-none"
+                      value={authForm.name}
+                      onChange={(e) => setAuthForm({...authForm, name: e.target.value})}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">Email</label>
+                  <input 
+                    type="email" 
+                    required
+                    className="w-full bg-[#333] border-none rounded-md py-3 px-4 focus:ring-2 focus:ring-spotify-green outline-none"
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">Password</label>
+                  <input 
+                    type="password" 
+                    required
+                    className="w-full bg-[#333] border-none rounded-md py-3 px-4 focus:ring-2 focus:ring-spotify-green outline-none"
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                  />
+                </div>
+                <button 
+                  type="submit"
+                  className="w-full bg-spotify-green text-black font-bold py-4 rounded-full mt-4 hover:scale-105 transition-transform"
+                >
+                  {authMode === 'login' ? 'LOG IN' : 'SIGN UP'}
+                </button>
+              </form>
+              <p className="mt-6 text-center text-spotify-gray text-sm">
+                {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}
+                <button 
+                  onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                  className="ml-2 text-white font-bold hover:underline"
+                >
+                  {authMode === 'login' ? 'Sign up' : 'Log in'}
+                </button>
+              </p>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -668,8 +921,11 @@ export default function App() {
                     <h2 className="text-2xl font-bold truncate">{currentSong.title}</h2>
                     <p className="text-spotify-gray text-lg truncate">{currentSong.artist}</p>
                   </div>
-                  <button className="text-spotify-green">
-                    <Heart size={28} className="fill-current" />
+                  <button 
+                    onClick={() => toggleLike(currentSong.id)}
+                    className={`${likedSongIds.includes(currentSong.id) ? 'text-spotify-green' : 'text-white'} transition-colors`}
+                  >
+                    <Heart size={28} className={likedSongIds.includes(currentSong.id) ? 'fill-current' : ''} />
                   </button>
                 </div>
 
@@ -811,6 +1067,19 @@ export default function App() {
               strokeWidth={activeTab === 'premium' ? 3 : 2}
             />
             <span className={`text-[10px] ${activeTab === 'premium' ? 'font-bold' : 'font-medium'}`}>Premium</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('library')}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'library' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+          >
+            <div className="relative">
+              <Heart 
+                size={24} 
+                strokeWidth={activeTab === 'library' ? 3 : 2}
+                className={activeTab === 'library' ? 'fill-spotify-green text-spotify-green' : ''}
+              />
+            </div>
+            <span className={`text-[10px] ${activeTab === 'library' ? 'font-bold' : 'font-medium'}`}>Library</span>
           </button>
         </nav>
       </div>
