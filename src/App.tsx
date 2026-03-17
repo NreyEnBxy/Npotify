@@ -423,33 +423,52 @@ export default function App() {
         {activeTab === 'home' ? (
           <div className="p-4 pt-6">
             {/* Top Bar */}
-            <header className="flex items-center gap-3 mb-6">
-              <div 
-                onClick={() => setIsSidebarOpen(true)}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
-              >
-                <img 
-                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
-                  className="w-full h-full object-cover" 
-                  alt="User Profile"
-                  referrerPolicy="no-referrer"
-                />
+            <header className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div 
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                >
+                  <img 
+                    src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
+                    className="w-full h-full object-cover" 
+                    alt="User Profile"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  {['All', 'Music'].map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setActiveFilter(filter)}
+                      className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        activeFilter === filter 
+                          ? 'bg-spotify-green text-black' 
+                          : 'bg-white/10 text-white hover:bg-white/20'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-2">
-                {['All', 'Music'].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setActiveFilter(filter)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                      activeFilter === filter 
-                        ? 'bg-spotify-green text-black' 
-                        : 'bg-white/10 text-white hover:bg-white/20'
-                    }`}
+
+              {!currentUser && (
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }}
+                    className="text-spotify-gray hover:text-white font-bold text-sm transition-colors"
                   >
-                    {filter}
+                    Sign up
                   </button>
-                ))}
-              </div>
+                  <button 
+                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                    className="bg-white text-black font-bold py-2 px-6 rounded-full text-sm hover:scale-105 transition-transform"
+                  >
+                    Log in
+                  </button>
+                </div>
+              )}
             </header>
 
             {/* Recent Grid */}
@@ -511,19 +530,38 @@ export default function App() {
           </div>
         ) : activeTab === 'search' ? (
           <div className="p-4 pt-6">
-            <div className="flex items-center gap-4 mb-6">
-              <div 
-                onClick={() => setIsSidebarOpen(true)}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
-              >
-                <img 
-                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
-                  className="w-full h-full object-cover" 
-                  alt="User Profile"
-                  referrerPolicy="no-referrer"
-                />
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <div 
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                >
+                  <img 
+                    src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
+                    className="w-full h-full object-cover" 
+                    alt="User Profile"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <h2 className="text-3xl font-bold tracking-tight">Search</h2>
               </div>
-              <h2 className="text-3xl font-bold tracking-tight">Search</h2>
+
+              {!currentUser && (
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }}
+                    className="text-spotify-gray hover:text-white font-bold text-sm transition-colors"
+                  >
+                    Sign up
+                  </button>
+                  <button 
+                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                    className="bg-white text-black font-bold py-2 px-6 rounded-full text-sm hover:scale-105 transition-transform"
+                  >
+                    Log in
+                  </button>
+                </div>
+              )}
             </div>
             <div className="relative mb-8">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/60" size={20} />
@@ -587,19 +625,38 @@ export default function App() {
           </div>
         ) : activeTab === 'library' ? (
           <div className="p-4 pt-6">
-            <div className="flex items-center gap-4 mb-6">
-              <div 
-                onClick={() => setIsSidebarOpen(true)}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
-              >
-                <img 
-                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
-                  className="w-full h-full object-cover" 
-                  alt="User Profile"
-                  referrerPolicy="no-referrer"
-                />
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <div 
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                >
+                  <img 
+                    src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
+                    className="w-full h-full object-cover" 
+                    alt="User Profile"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <h2 className="text-3xl font-bold tracking-tight">Your Library</h2>
               </div>
-              <h2 className="text-3xl font-bold tracking-tight">Your Library</h2>
+
+              {!currentUser && (
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }}
+                    className="text-spotify-gray hover:text-white font-bold text-sm transition-colors"
+                  >
+                    Sign up
+                  </button>
+                  <button 
+                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                    className="bg-white text-black font-bold py-2 px-6 rounded-full text-sm hover:scale-105 transition-transform"
+                  >
+                    Log in
+                  </button>
+                </div>
+              )}
             </div>
 
             {!currentUser ? (
