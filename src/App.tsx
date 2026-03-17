@@ -24,7 +24,8 @@ import {
   ArrowLeft,
   Download,
   Camera,
-  X
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -112,6 +113,12 @@ export default function App() {
   const [likedSongIds, setLikedSongIds] = useState<number[]>([]);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [accountForm, setAccountForm] = useState({ name: '', password: '', profilePic: '' });
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -153,7 +160,7 @@ export default function App() {
     try {
       if (authMode === 'signup') {
         if (!authForm.name || !authForm.email || !authForm.password) {
-          alert("Please fill all fields");
+          showToast("Please fill all fields", 'error');
           return;
         }
         
@@ -181,9 +188,9 @@ export default function App() {
     } catch (error: any) {
       console.error("Auth error:", error);
       if (error.code === 'auth/operation-not-allowed') {
-        alert("ইমেইল/পাসওয়ার্ড লগইন অপশনটি Firebase কনসোল থেকে চালু করা হয়নি। দয়া করে Firebase Console > Authentication > Sign-in method-এ গিয়ে Email/Password এনাবল করুন।");
+        showToast("Email/Password login is not enabled in Firebase Console.", 'error');
       } else {
-        alert("Error: " + error.message);
+        showToast("Error: " + error.message, 'error');
       }
     }
   };
@@ -214,10 +221,10 @@ export default function App() {
       }
 
       setShowAccountSettings(false);
-      alert("Account updated successfully!");
+      showToast("Account updated successfully!", 'success');
     } catch (error: any) {
       console.error("Update error:", error);
-      alert(error.message);
+      showToast(error.message, 'error');
     }
   };
 
@@ -268,7 +275,7 @@ export default function App() {
   const downloadSong = async (song: Song) => {
     if (!currentUser) {
       setShowDownloadMenu(false);
-      alert("লগইন না করে গান ডাউনলোড করা যাবে না। দয়া করে লগইন বা সাইন আপ করুন।");
+      showToast("You must be logged in to download songs. Please log in or sign up.", 'info');
       setAuthMode('login');
       setShowAuthModal(true);
       return;
@@ -288,7 +295,7 @@ export default function App() {
       setShowDownloadMenu(false);
     } catch (error) {
       console.error("Download failed:", error);
-      alert("Download failed. This might be due to CORS restrictions on the source file.");
+      showToast("Download failed. This might be due to CORS restrictions.", 'error');
     }
   };
 
@@ -1433,6 +1440,26 @@ export default function App() {
           }
         }}
       />
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ y: 50, opacity: 0, x: '-50%' }}
+            animate={{ y: 0, opacity: 1, x: '-50%' }}
+            exit={{ y: 50, opacity: 0, x: '-50%' }}
+            className={`fixed bottom-24 left-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 min-w-[300px] justify-center ${
+              toast.type === 'success' ? 'bg-spotify-green text-black' : 
+              toast.type === 'error' ? 'bg-red-500 text-white' : 
+              'bg-[#282828] text-white border border-white/10'
+            }`}
+          >
+            {toast.type === 'error' && <AlertCircle size={20} />}
+            {toast.type === 'success' && <CheckCircle2 size={20} />}
+            {toast.type === 'info' && <AlertCircle size={20} className="text-spotify-green" />}
+            <span className="text-sm font-bold">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {
