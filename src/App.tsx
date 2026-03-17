@@ -20,7 +20,8 @@ import {
   Heart,
   Shuffle,
   Repeat,
-  Circle
+  Circle,
+  ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -71,6 +72,7 @@ export default function App() {
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
+  const [showPremiumFrame, setShowPremiumFrame] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -241,7 +243,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Scrollable Area */}
-      <main className="flex-1 overflow-y-auto pb-40 scrollbar-hide">
+      <main className={`flex-1 ${activeTab === 'premium' && showPremiumFrame ? 'overflow-hidden' : 'overflow-y-auto pb-40'} scrollbar-hide`}>
         {activeTab === 'home' ? (
           <div className="p-4 pt-6">
             {/* Top Bar */}
@@ -387,16 +389,39 @@ export default function App() {
             )}
           </div>
         ) : (
-          <div className="p-4 pt-20 text-center">
-            <Music size={60} className="mx-auto mb-4 text-spotify-green" />
-            <h2 className="text-2xl font-bold mb-2">Spotify Premium</h2>
-            <p className="text-spotify-gray mb-6">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
-            <button 
-              onClick={() => window.open('https://www.supportkori.com/nuet', '_blank')}
-              className="bg-white text-black font-bold py-3 px-8 rounded-full"
-            >
-              GET PREMIUM
-            </button>
+          <div className="h-full flex flex-col">
+            {!showPremiumFrame ? (
+              <div className="p-4 pt-20 text-center flex-1">
+                <Music size={60} className="mx-auto mb-4 text-spotify-green" />
+                <h2 className="text-2xl font-bold mb-2">Spotify Premium</h2>
+                <p className="text-spotify-gray mb-6">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
+                <button 
+                  onClick={() => setShowPremiumFrame(true)}
+                  className="bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition-transform"
+                >
+                  GET PREMIUM
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col bg-black">
+                <div className="p-4 flex items-center gap-4 border-b border-white/10">
+                  <button 
+                    onClick={() => setShowPremiumFrame(false)}
+                    className="text-white hover:text-spotify-green transition-colors"
+                  >
+                    <ArrowLeft size={24} />
+                  </button>
+                  <span className="font-bold">Premium Donation</span>
+                </div>
+                <iframe 
+                  src="https://www.supportkori.com/nuet" 
+                  className="w-full flex-1 border-none bg-white"
+                  title="Premium Donation"
+                  sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
+                  loading="lazy"
+                />
+              </div>
+            )}
           </div>
         )}
       </main>
