@@ -73,6 +73,7 @@ export default function App() {
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -248,8 +249,16 @@ export default function App() {
           <div className="p-4 pt-6">
             {/* Top Bar */}
             <header className="flex items-center gap-3 mb-6">
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10">
-                <img src="https://picsum.photos/seed/user/100/100" className="w-full h-full object-cover" />
+              <div 
+                onClick={() => setIsSidebarOpen(true)}
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
+              >
+                <img 
+                  src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                  className="w-full h-full object-cover" 
+                  alt="IShowSpeed"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <div className="flex gap-2">
                 {['All', 'Music'].map((filter) => (
@@ -327,7 +336,20 @@ export default function App() {
           </div>
         ) : activeTab === 'search' ? (
           <div className="p-4 pt-6">
-            <h2 className="text-3xl font-bold mb-6 tracking-tight">Search</h2>
+            <div className="flex items-center gap-4 mb-6">
+              <div 
+                onClick={() => setIsSidebarOpen(true)}
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+              >
+                <img 
+                  src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                  className="w-full h-full object-cover" 
+                  alt="IShowSpeed"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <h2 className="text-3xl font-bold tracking-tight">Search</h2>
+            </div>
             <div className="relative mb-8">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/60" size={20} />
               <input 
@@ -391,7 +413,20 @@ export default function App() {
         ) : (
           <div className="h-full flex flex-col">
             {!showPremiumFrame ? (
-              <div className="p-4 pt-20 text-center flex-1">
+              <div className="p-4 pt-6 text-center flex-1">
+                <div className="flex justify-start mb-10">
+                  <div 
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
+                  >
+                    <img 
+                      src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                      className="w-full h-full object-cover" 
+                      alt="IShowSpeed"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                </div>
                 <Music size={60} className="mx-auto mb-4 text-spotify-green" />
                 <h2 className="text-2xl font-bold mb-2">Spotify Premium</h2>
                 <p className="text-spotify-gray mb-6">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
@@ -425,6 +460,69 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Sidebar / Slidebar */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm"
+            />
+            {/* Sidebar Content */}
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 left-0 bottom-0 w-[280px] bg-spotify-base z-[70] shadow-2xl border-r border-white/10 p-6"
+            >
+              <div className="flex flex-col h-full">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg">
+                    <img 
+                      src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                      className="w-full h-full object-cover" 
+                      alt="IShowSpeed"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-xl">IShowSpeed</h3>
+                    <p className="text-spotify-gray text-sm">View Profile</p>
+                  </div>
+                </div>
+
+                <nav className="flex-1 space-y-4">
+                  <div className="py-2 px-4 rounded-md bg-white/5 hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
+                    <Music size={20} className="text-spotify-green" />
+                    <span className="font-medium">My Playlists</span>
+                  </div>
+                  <div className="py-2 px-4 rounded-md hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
+                    <Heart size={20} />
+                    <span className="font-medium">Liked Songs</span>
+                  </div>
+                  <div className="py-2 px-4 rounded-md hover:bg-white/10 cursor-pointer transition-colors flex items-center gap-3">
+                    <Circle size={20} />
+                    <span className="font-medium">Settings</span>
+                  </div>
+                </nav>
+
+                <button 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="mt-auto py-3 w-full bg-white/10 rounded-full font-bold hover:bg-white/20 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Floating Player & Nav Container */}
       <div className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 pointer-events-none">
