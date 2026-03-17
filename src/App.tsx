@@ -661,8 +661,8 @@ export default function App() {
               className="fixed top-0 left-0 bottom-0 w-[280px] bg-spotify-base z-[70] shadow-2xl border-r border-white/10 p-6"
             >
               <div className="flex flex-col h-full">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg">
+                <div className="flex flex-col items-center gap-4 mb-8 text-center">
+                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg shrink-0">
                     <img 
                       src="https://files.catbox.moe/uxcbs7.jpeg" 
                       className="w-full h-full object-cover" 
@@ -670,9 +670,9 @@ export default function App() {
                       referrerPolicy="no-referrer"
                     />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-xl">{currentUser ? currentUser.name : 'Guest User'}</h3>
-                    <p className="text-spotify-gray text-sm">{currentUser ? currentUser.email : 'Login to save your data'}</p>
+                  <div className="w-full overflow-hidden">
+                    <h3 className="font-bold text-xl truncate px-2">{currentUser ? currentUser.name : 'Guest User'}</h3>
+                    <p className="text-spotify-gray text-sm truncate px-2">{currentUser ? currentUser.email : 'Login to save your data'}</p>
                   </div>
                 </div>
 
