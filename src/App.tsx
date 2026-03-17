@@ -22,7 +22,9 @@ import {
   Repeat,
   Circle,
   ArrowLeft,
-  Download
+  Download,
+  Camera,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -63,6 +65,7 @@ interface User {
   name: string;
   email: string;
   password?: string;
+  profilePic?: string;
 }
 
 export default function App() {
@@ -89,6 +92,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [likedSongIds, setLikedSongIds] = useState<number[]>([]);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [accountForm, setAccountForm] = useState({ name: '', password: '', profilePic: '' });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -118,18 +123,35 @@ export default function App() {
         alert("User already exists");
         return;
       }
-      const newUser = { name: authForm.name, email: authForm.email, password: authForm.password };
+      const newUser = { 
+        name: authForm.name, 
+        email: authForm.email, 
+        password: authForm.password,
+        profilePic: "https://files.catbox.moe/uxcbs7.jpeg" // Default PFP
+      };
       users.push(newUser);
       localStorage.setItem('spotify_all_users', JSON.stringify(users));
-      localStorage.setItem('spotify_user', JSON.stringify({ name: newUser.name, email: newUser.email }));
-      setCurrentUser({ name: newUser.name, email: newUser.email });
+      localStorage.setItem('spotify_user', JSON.stringify({ 
+        name: newUser.name, 
+        email: newUser.email, 
+        profilePic: newUser.profilePic 
+      }));
+      setCurrentUser({ name: newUser.name, email: newUser.email, profilePic: newUser.profilePic });
       setShowAuthModal(false);
     } else {
       const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
       const user = users.find((u: User) => u.email === authForm.email && u.password === authForm.password);
       if (user) {
-        localStorage.setItem('spotify_user', JSON.stringify({ name: user.name, email: user.email }));
-        setCurrentUser({ name: user.name, email: user.email });
+        localStorage.setItem('spotify_user', JSON.stringify({ 
+          name: user.name, 
+          email: user.email, 
+          profilePic: user.profilePic || "https://files.catbox.moe/uxcbs7.jpeg" 
+        }));
+        setCurrentUser({ 
+          name: user.name, 
+          email: user.email, 
+          profilePic: user.profilePic || "https://files.catbox.moe/uxcbs7.jpeg" 
+        });
         
         const savedLikes = localStorage.getItem(`spotify_likes_${user.email}`);
         if (savedLikes) {
@@ -141,6 +163,50 @@ export default function App() {
       } else {
         alert("Invalid email or password");
       }
+    }
+  };
+
+  const handleUpdateAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
+    const userIndex = users.findIndex((u: User) => u.email === currentUser.email);
+
+    if (userIndex !== -1) {
+      const updatedUser = { 
+        ...users[userIndex], 
+        name: accountForm.name || users[userIndex].name,
+        profilePic: accountForm.profilePic || users[userIndex].profilePic
+      };
+      
+      if (accountForm.password) {
+        updatedUser.password = accountForm.password;
+      }
+
+      users[userIndex] = updatedUser;
+      localStorage.setItem('spotify_all_users', JSON.stringify(users));
+      
+      const sessionUser = { 
+        name: updatedUser.name, 
+        email: updatedUser.email, 
+        profilePic: updatedUser.profilePic 
+      };
+      localStorage.setItem('spotify_user', JSON.stringify(sessionUser));
+      setCurrentUser(sessionUser);
+      setShowAccountSettings(false);
+      alert("Account updated successfully!");
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAccountForm({ ...accountForm, profilePic: reader.result as string });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -360,12 +426,12 @@ export default function App() {
             <header className="flex items-center gap-3 mb-6">
               <div 
                 onClick={() => setIsSidebarOpen(true)}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
               >
                 <img 
-                  src="https://files.catbox.moe/uxcbs7.jpeg" 
+                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
                   className="w-full h-full object-cover" 
-                  alt="IShowSpeed"
+                  alt="User Profile"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -451,9 +517,9 @@ export default function App() {
                 className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
               >
                 <img 
-                  src="https://files.catbox.moe/uxcbs7.jpeg" 
+                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
                   className="w-full h-full object-cover" 
-                  alt="IShowSpeed"
+                  alt="User Profile"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -527,9 +593,9 @@ export default function App() {
                 className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
               >
                 <img 
-                  src="https://files.catbox.moe/uxcbs7.jpeg" 
+                  src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
                   className="w-full h-full object-cover" 
-                  alt="IShowSpeed"
+                  alt="User Profile"
                   referrerPolicy="no-referrer"
                 />
               </div>
@@ -596,12 +662,12 @@ export default function App() {
                 <div className="flex justify-start mb-10">
                   <div 
                     onClick={() => setIsSidebarOpen(true)}
-                    className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
+                    className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
                   >
                     <img 
-                      src="https://files.catbox.moe/uxcbs7.jpeg" 
+                      src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
                       className="w-full h-full object-cover" 
-                      alt="IShowSpeed"
+                      alt="User Profile"
                       referrerPolicy="no-referrer"
                     />
                   </div>
@@ -661,18 +727,35 @@ export default function App() {
               className="fixed top-0 left-0 bottom-0 w-[280px] bg-spotify-base z-[70] shadow-2xl border-r border-white/10 p-6"
             >
               <div className="flex flex-col h-full">
-                <div className="flex flex-col items-center gap-4 mb-8 text-center">
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg shrink-0">
+                <div 
+                  className="flex flex-col items-center gap-4 mb-8 text-center cursor-pointer hover:bg-white/5 p-4 rounded-xl transition-colors group"
+                  onClick={() => {
+                    if (currentUser) {
+                      setAccountForm({ name: currentUser.name, password: '', profilePic: currentUser.profilePic || '' });
+                      setShowAccountSettings(true);
+                      setIsSidebarOpen(false);
+                    } else {
+                      setAuthMode('login');
+                      setShowAuthModal(true);
+                      setIsSidebarOpen(false);
+                    }
+                  }}
+                >
+                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg shrink-0 relative">
                     <img 
-                      src="https://files.catbox.moe/uxcbs7.jpeg" 
+                      src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
                       className="w-full h-full object-cover" 
-                      alt="IShowSpeed"
+                      alt="User Profile"
                       referrerPolicy="no-referrer"
                     />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera size={20} className="text-white" />
+                    </div>
                   </div>
                   <div className="w-full overflow-hidden">
                     <h3 className="font-bold text-xl truncate px-2">{currentUser ? currentUser.name : 'Guest User'}</h3>
                     <p className="text-spotify-gray text-sm truncate px-2">{currentUser ? currentUser.email : 'Login to save your data'}</p>
+                    {currentUser && <span className="text-[10px] text-spotify-green font-bold uppercase tracking-widest mt-1 block">View Account</span>}
                   </div>
                 </div>
 
@@ -794,6 +877,115 @@ export default function App() {
                   {authMode === 'login' ? 'Sign up' : 'Log in'}
                 </button>
               </p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Account Settings Modal */}
+      <AnimatePresence>
+        {showAccountSettings && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAccountSettings(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-[#181818] w-full max-w-md rounded-2xl p-8 relative z-10 shadow-2xl border border-white/10"
+            >
+              <button 
+                onClick={() => setShowAccountSettings(false)}
+                className="absolute top-4 right-4 text-spotify-gray hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+              
+              <h2 className="text-2xl font-bold mb-6 text-center">Account Settings</h2>
+              
+              <form onSubmit={handleUpdateAccount} className="space-y-6">
+                {/* Profile Picture Upload */}
+                <div className="flex flex-col items-center gap-4 mb-6">
+                  <div className="relative group cursor-pointer" onClick={() => document.getElementById('profile-upload')?.click()}>
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-spotify-green shadow-xl relative">
+                      <img 
+                        src={accountForm.profilePic || currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
+                        className="w-full h-full object-cover" 
+                        alt="Profile Preview"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Camera size={24} className="text-white" />
+                      </div>
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 bg-spotify-green text-black p-1.5 rounded-full shadow-lg">
+                      <Camera size={14} />
+                    </div>
+                  </div>
+                  <input 
+                    id="profile-upload"
+                    type="file" 
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <p className="text-[10px] text-spotify-gray uppercase tracking-widest font-bold">Click to change photo</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    className="w-full bg-[#333] border-none rounded-md py-3 px-4 focus:ring-2 focus:ring-spotify-green outline-none"
+                    value={accountForm.name}
+                    onChange={(e) => setAccountForm({...accountForm, name: e.target.value})}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">Email Address</label>
+                  <input 
+                    type="email" 
+                    disabled
+                    className="w-full bg-[#222] border-none rounded-md py-3 px-4 text-spotify-gray cursor-not-allowed outline-none"
+                    value={currentUser?.email || ''}
+                  />
+                  <p className="text-[10px] text-spotify-gray mt-1 italic">Email cannot be changed</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-spotify-gray mb-2">New Password (optional)</label>
+                  <input 
+                    type="password" 
+                    placeholder="Leave blank to keep current"
+                    className="w-full bg-[#333] border-none rounded-md py-3 px-4 focus:ring-2 focus:ring-spotify-green outline-none"
+                    value={accountForm.password}
+                    onChange={(e) => setAccountForm({...accountForm, password: e.target.value})}
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setShowAccountSettings(false)}
+                    className="flex-1 bg-transparent border border-white/20 text-white font-bold py-3 rounded-full hover:bg-white/5 transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-spotify-green text-black font-bold py-3 rounded-full hover:scale-105 transition-transform"
+                  >
+                    SAVE CHANGES
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
