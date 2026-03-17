@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - name: string (required)
+    //   - email: string (required, email format)
+    //   - createdAt: timestamp (optional)
+    //
+    // Subcollection: users/{userId}/likes
+    // Document ID: {songId} (String representation of song ID)
+    // Fields:
+    //   - songId: number (required)
+    //   - userId: string (required, matches parent userId)
+    //   - createdAt: timestamp (optional)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'email']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email);
+    }
+
+    function isValidLike(data, userId) {
+      return data.keys().hasAll(['songId', 'userId']) &&
+             data.songId is number &&
+             data.userId == userId;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+
+      match /likes/{songId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidLike(request.resource.data, userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

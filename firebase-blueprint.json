@@ -1,0 +1,36 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["name", "email"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "A song liked by a user",
+      "type": "object",
+      "properties": {
+        "songId": { "type": "integer", "description": "The ID of the liked song" },
+        "userId": { "type": "string", "description": "The UID of the user who liked the song" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the song was liked" }
+      },
+      "required": ["songId", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/users/{userId}/likes/{likeId}": {
+      "schema": "Like",
+      "description": "Subcollection of liked songs for a user"
+    }
+  }
+}

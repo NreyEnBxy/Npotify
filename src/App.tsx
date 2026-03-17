@@ -27,6 +27,24 @@ import {
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth, db } from './firebase';
+import { 
+  onAuthStateChanged, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut,
+  updateProfile,
+  updatePassword
+} from 'firebase/auth';
+import { 
+  doc, 
+  setDoc, 
+  getDoc, 
+  collection, 
+  onSnapshot, 
+  deleteDoc,
+  serverTimestamp
+} from 'firebase/firestore';
 
 // --- CONFIGURATION ---
 // You can set this in your environment variables as VITE_GOOGLE_SHEET_ID
@@ -97,105 +115,105 @@ export default function App() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Load user and likes from localStorage
+  // Firebase Auth Listener
   useEffect(() => {
-    const savedUser = localStorage.getItem('spotify_user');
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      setCurrentUser(user);
-      
-      const savedLikes = localStorage.getItem(`spotify_likes_${user.email}`);
-      if (savedLikes) {
-        setLikedSongIds(JSON.parse(savedLikes));
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Fetch user profile from Firestore
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userData = userDoc.data();
+        
+        // Get PFP from localStorage (as requested)
+        const savedPfp = localStorage.getItem(`spotify_pfp_${user.email}`);
+        
+        setCurrentUser({
+          name: userData?.name || user.displayName || 'User',
+          email: user.email!,
+          profilePic: savedPfp || "https://files.catbox.moe/uxcbs7.jpeg"
+        });
+
+        // Listen for likes in real-time
+        const likesUnsubscribe = onSnapshot(collection(db, 'users', user.uid, 'likes'), (snapshot) => {
+          const likes = snapshot.docs.map(doc => Number(doc.id));
+          setLikedSongIds(likes);
+        });
+
+        return () => likesUnsubscribe();
+      } else {
+        setCurrentUser(null);
+        setLikedSongIds([]);
       }
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (authMode === 'signup') {
-      if (!authForm.name || !authForm.email || !authForm.password) {
-        alert("Please fill all fields");
-        return;
-      }
-      const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
-      if (users.find((u: User) => u.email === authForm.email)) {
-        alert("User already exists");
-        return;
-      }
-      const newUser = { 
-        name: authForm.name, 
-        email: authForm.email, 
-        password: authForm.password,
-        profilePic: "https://files.catbox.moe/uxcbs7.jpeg" // Default PFP
-      };
-      users.push(newUser);
-      localStorage.setItem('spotify_all_users', JSON.stringify(users));
-      localStorage.setItem('spotify_user', JSON.stringify({ 
-        name: newUser.name, 
-        email: newUser.email, 
-        profilePic: newUser.profilePic 
-      }));
-      setCurrentUser({ name: newUser.name, email: newUser.email, profilePic: newUser.profilePic });
-      setShowAuthModal(false);
-    } else {
-      const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
-      const user = users.find((u: User) => u.email === authForm.email && u.password === authForm.password);
-      if (user) {
-        localStorage.setItem('spotify_user', JSON.stringify({ 
-          name: user.name, 
-          email: user.email, 
-          profilePic: user.profilePic || "https://files.catbox.moe/uxcbs7.jpeg" 
-        }));
-        setCurrentUser({ 
-          name: user.name, 
-          email: user.email, 
-          profilePic: user.profilePic || "https://files.catbox.moe/uxcbs7.jpeg" 
-        });
-        
-        const savedLikes = localStorage.getItem(`spotify_likes_${user.email}`);
-        if (savedLikes) {
-          setLikedSongIds(JSON.parse(savedLikes));
-        } else {
-          setLikedSongIds([]);
+    try {
+      if (authMode === 'signup') {
+        if (!authForm.name || !authForm.email || !authForm.password) {
+          alert("Please fill all fields");
+          return;
         }
+        
+        const userCredential = await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
+        const user = userCredential.user;
+
+        // Save profile to Firestore
+        await setDoc(doc(db, 'users', user.uid), {
+          name: authForm.name,
+          email: authForm.email,
+          createdAt: serverTimestamp()
+        });
+
+        // Update Firebase profile
+        await updateProfile(user, { displayName: authForm.name });
+
+        // Save default PFP to localStorage
+        localStorage.setItem(`spotify_pfp_${authForm.email}`, "https://files.catbox.moe/uxcbs7.jpeg");
+
         setShowAuthModal(false);
       } else {
-        alert("Invalid email or password");
+        await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
+        setShowAuthModal(false);
       }
+    } catch (error: any) {
+      console.error("Auth error:", error);
+      alert(error.message);
     }
   };
 
-  const handleUpdateAccount = (e: React.FormEvent) => {
+  const handleUpdateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
+    if (!auth.currentUser || !currentUser) return;
 
-    const users = JSON.parse(localStorage.getItem('spotify_all_users') || '[]');
-    const userIndex = users.findIndex((u: User) => u.email === currentUser.email);
-
-    if (userIndex !== -1) {
-      const updatedUser = { 
-        ...users[userIndex], 
-        name: accountForm.name || users[userIndex].name,
-        profilePic: accountForm.profilePic || users[userIndex].profilePic
-      };
-      
-      if (accountForm.password) {
-        updatedUser.password = accountForm.password;
+    try {
+      // Update name in Firestore
+      if (accountForm.name) {
+        await setDoc(doc(db, 'users', auth.currentUser.uid), {
+          name: accountForm.name
+        }, { merge: true });
+        
+        await updateProfile(auth.currentUser, { displayName: accountForm.name });
       }
 
-      users[userIndex] = updatedUser;
-      localStorage.setItem('spotify_all_users', JSON.stringify(users));
-      
-      const sessionUser = { 
-        name: updatedUser.name, 
-        email: updatedUser.email, 
-        profilePic: updatedUser.profilePic 
-      };
-      localStorage.setItem('spotify_user', JSON.stringify(sessionUser));
-      setCurrentUser(sessionUser);
+      // Update password in Firebase Auth
+      if (accountForm.password) {
+        await updatePassword(auth.currentUser, accountForm.password);
+      }
+
+      // Update PFP in localStorage (as requested)
+      if (accountForm.profilePic) {
+        localStorage.setItem(`spotify_pfp_${currentUser.email}`, accountForm.profilePic);
+        setCurrentUser({ ...currentUser, profilePic: accountForm.profilePic });
+      }
+
       setShowAccountSettings(false);
       alert("Account updated successfully!");
+    } catch (error: any) {
+      console.error("Update error:", error);
+      alert(error.message);
     }
   };
 
@@ -210,26 +228,37 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('spotify_user');
-    setCurrentUser(null);
-    setLikedSongIds([]);
-    setIsSidebarOpen(false);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setIsSidebarOpen(false);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
-  const toggleLike = (songId: number) => {
-    if (!currentUser) {
+  const toggleLike = async (songId: number) => {
+    if (!auth.currentUser) {
       setAuthMode('login');
       setShowAuthModal(true);
       return;
     }
 
-    const newLikes = likedSongIds.includes(songId)
-      ? likedSongIds.filter(id => id !== songId)
-      : [...likedSongIds, songId];
-    
-    setLikedSongIds(newLikes);
-    localStorage.setItem(`spotify_likes_${currentUser.email}`, JSON.stringify(newLikes));
+    const likeDocRef = doc(db, 'users', auth.currentUser.uid, 'likes', songId.toString());
+
+    try {
+      if (likedSongIds.includes(songId)) {
+        await deleteDoc(likeDocRef);
+      } else {
+        await setDoc(likeDocRef, {
+          songId: songId,
+          userId: auth.currentUser.uid,
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error("Error toggling like:", error);
+    }
   };
 
   const downloadSong = async (song: Song) => {
