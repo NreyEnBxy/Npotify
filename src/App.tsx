@@ -403,8 +403,92 @@ export default function App() {
     song.artist.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const SidebarContent = ({ isPersistent = false }: { isPersistent?: boolean }) => (
+    <div className="flex flex-col h-full">
+      <div 
+        className="flex flex-col items-center gap-4 mb-8 text-center cursor-pointer hover:bg-white/5 p-4 rounded-xl transition-colors group"
+        onClick={() => {
+          if (currentUser) {
+            setAccountForm({ name: currentUser.name, password: '', profilePic: currentUser.profilePic || '' });
+            setShowAccountSettings(true);
+            if (!isPersistent) setIsSidebarOpen(false);
+          } else {
+            setAuthMode('login');
+            setShowAuthModal(true);
+            if (!isPersistent) setIsSidebarOpen(false);
+          }
+        }}
+      >
+        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg shrink-0 relative">
+          <img 
+            src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
+            className="w-full h-full object-cover" 
+            alt="User Profile"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera size={20} className="text-white" />
+          </div>
+        </div>
+        <div className="w-full overflow-hidden">
+          <h3 className="font-bold text-xl truncate px-2">{currentUser ? currentUser.name : 'Guest User'}</h3>
+          <p className="text-spotify-gray text-sm truncate px-2">{currentUser ? currentUser.email : 'Login to save your data'}</p>
+          {currentUser && <span className="text-[10px] text-spotify-green font-bold uppercase tracking-widest mt-1 block">View Account</span>}
+        </div>
+      </div>
+
+      <nav className="flex-1 space-y-4">
+        <button 
+          onClick={() => { setActiveTab('home'); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'home' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+        >
+          <Home size={24} />
+          Home
+        </button>
+        <button 
+          onClick={() => { setActiveTab('library'); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'library' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+        >
+          <Heart size={24} />
+          Liked Songs
+        </button>
+        <button 
+          onClick={() => { setActiveTab('premium'); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'premium' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+        >
+          <Music size={24} />
+          Premium
+        </button>
+      </nav>
+
+      <div className="pt-6 border-t border-white/10">
+        {currentUser ? (
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-4 w-full text-left font-bold text-lg text-red-500 hover:text-red-400 transition-colors"
+          >
+            <ArrowLeft size={24} />
+            Log Out
+          </button>
+        ) : (
+          <button 
+            onClick={() => { setAuthMode('login'); setShowAuthModal(true); if (!isPersistent) setIsSidebarOpen(false); }}
+            className="flex items-center gap-4 w-full text-left font-bold text-lg text-spotify-green hover:text-spotify-green/80 transition-colors"
+          >
+            <CheckCircle2 size={24} />
+            Log In / Sign Up
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-screen flex flex-col bg-spotify-base text-white overflow-hidden font-sans">
+    <div className="h-screen flex flex-col lg:flex-row bg-spotify-base text-white overflow-hidden font-sans">
+      {/* Persistent Sidebar for Desktop */}
+      <aside className="hidden lg:flex w-[280px] flex-col bg-black border-r border-white/10 p-6 shrink-0 h-full">
+        <SidebarContent isPersistent={true} />
+      </aside>
       <AnimatePresence>
         {showSplash && (
           <motion.div 
@@ -427,7 +511,7 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <div 
                   onClick={() => setIsSidebarOpen(true)}
-                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0 lg:hidden"
                 >
                   <img 
                     src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
@@ -472,7 +556,7 @@ export default function App() {
             </header>
 
             {/* Recent Grid */}
-            <section className="grid grid-cols-2 gap-2 mb-8">
+            <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4 mb-8">
               {songs.slice(0, 8).map((song, i) => (
                 <div 
                   key={i} 
@@ -534,7 +618,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <div 
                   onClick={() => setIsSidebarOpen(true)}
-                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0 lg:hidden"
                 >
                   <img 
                     src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
@@ -629,7 +713,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <div 
                   onClick={() => setIsSidebarOpen(true)}
-                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
+                  className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0 lg:hidden"
                 >
                   <img 
                     src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
@@ -715,8 +799,8 @@ export default function App() {
         ) : (
           <div className="h-full flex flex-col">
             {!showPremiumFrame ? (
-              <div className="p-4 pt-6 text-center flex-1">
-                <div className="flex justify-start mb-10">
+              <div className="p-4 pt-6 text-center flex-1 lg:flex lg:flex-col lg:justify-center">
+                <div className="flex justify-start mb-10 lg:hidden">
                   <div 
                     onClick={() => setIsSidebarOpen(true)}
                     className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
@@ -729,12 +813,12 @@ export default function App() {
                     />
                   </div>
                 </div>
-                <Music size={60} className="mx-auto mb-4 text-spotify-green" />
-                <h2 className="text-2xl font-bold mb-2">Spotify Premium</h2>
-                <p className="text-spotify-gray mb-6">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
+                <Music size={60} className="mx-auto mb-4 text-spotify-green lg:w-24 lg:h-24" />
+                <h2 className="text-2xl font-bold mb-2 lg:text-4xl">Spotify Premium</h2>
+                <p className="text-spotify-gray mb-6 lg:text-xl lg:max-w-md lg:mx-auto">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
                 <button 
                   onClick={() => setShowPremiumFrame(true)}
-                  className="bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition-transform"
+                  className="bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition-transform lg:py-4 lg:px-12 lg:text-lg"
                 >
                   GET PREMIUM
                 </button>
@@ -781,85 +865,9 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 bottom-0 w-[280px] bg-spotify-base z-[70] shadow-2xl border-r border-white/10 p-6"
+              className="fixed top-0 left-0 bottom-0 w-[280px] bg-spotify-base z-[70] shadow-2xl border-r border-white/10 p-6 lg:hidden"
             >
-              <div className="flex flex-col h-full">
-                <div 
-                  className="flex flex-col items-center gap-4 mb-8 text-center cursor-pointer hover:bg-white/5 p-4 rounded-xl transition-colors group"
-                  onClick={() => {
-                    if (currentUser) {
-                      setAccountForm({ name: currentUser.name, password: '', profilePic: currentUser.profilePic || '' });
-                      setShowAccountSettings(true);
-                      setIsSidebarOpen(false);
-                    } else {
-                      setAuthMode('login');
-                      setShowAuthModal(true);
-                      setIsSidebarOpen(false);
-                    }
-                  }}
-                >
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg shrink-0 relative">
-                    <img 
-                      src={currentUser?.profilePic || "https://files.catbox.moe/uxcbs7.jpeg"} 
-                      className="w-full h-full object-cover" 
-                      alt="User Profile"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Camera size={20} className="text-white" />
-                    </div>
-                  </div>
-                  <div className="w-full overflow-hidden">
-                    <h3 className="font-bold text-xl truncate px-2">{currentUser ? currentUser.name : 'Guest User'}</h3>
-                    <p className="text-spotify-gray text-sm truncate px-2">{currentUser ? currentUser.email : 'Login to save your data'}</p>
-                    {currentUser && <span className="text-[10px] text-spotify-green font-bold uppercase tracking-widest mt-1 block">View Account</span>}
-                  </div>
-                </div>
-
-                <nav className="flex-1 space-y-4">
-                  <button 
-                    onClick={() => { setActiveTab('home'); setIsSidebarOpen(false); }}
-                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
-                  >
-                    <Home size={24} />
-                    Home
-                  </button>
-                  <button 
-                    onClick={() => { setActiveTab('library'); setIsSidebarOpen(false); }}
-                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
-                  >
-                    <Heart size={24} />
-                    Liked Songs
-                  </button>
-                  <button 
-                    onClick={() => { setActiveTab('premium'); setIsSidebarOpen(false); }}
-                    className="flex items-center gap-4 w-full text-left font-bold text-lg hover:text-spotify-green transition-colors"
-                  >
-                    <Music size={24} />
-                    Premium
-                  </button>
-                </nav>
-
-                <div className="pt-6 border-t border-white/10">
-                  {currentUser ? (
-                    <button 
-                      onClick={handleLogout}
-                      className="flex items-center gap-4 w-full text-left font-bold text-lg text-red-500 hover:text-red-400 transition-colors"
-                    >
-                      <ArrowLeft size={24} />
-                      Log Out
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => { setShowAuthModal(true); setIsSidebarOpen(false); }}
-                      className="flex items-center gap-4 w-full text-left font-bold text-lg text-spotify-green hover:text-spotify-green/80 transition-colors"
-                    >
-                      <CheckCircle2 size={24} />
-                      Log In / Sign Up
-                    </button>
-                  )}
-                </div>
-              </div>
+              <SidebarContent />
             </motion.div>
           </>
         )}
@@ -1049,7 +1057,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Player & Nav Container */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 pointer-events-none">
+      <div className="fixed bottom-0 left-0 right-0 z-40 px-2 pb-2 pointer-events-none lg:left-[280px]">
         {/* Floating Player */}
         <AnimatePresence>
           {currentSong && !isPlayerExpanded && (
@@ -1057,28 +1065,47 @@ export default function App() {
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-[#282828] rounded-lg p-2 flex items-center justify-between shadow-2xl pointer-events-auto mb-2"
+              className="bg-[#282828] rounded-lg p-2 flex items-center justify-between shadow-2xl pointer-events-auto mb-2 lg:mb-4 lg:mx-4"
               onClick={() => setIsPlayerExpanded(true)}
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                <img src={currentSong.cover} className="w-10 h-10 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
+                <img src={currentSong.cover} className="w-10 h-10 lg:w-14 lg:h-14 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold truncate">{currentSong.title}</span>
-                  <span className="text-[10px] text-spotify-gray truncate">{currentSong.artist}</span>
+                  <span className="text-xs lg:text-sm font-bold truncate">{currentSong.title}</span>
+                  <span className="text-[10px] lg:text-xs text-spotify-gray truncate">{currentSong.artist}</span>
                 </div>
               </div>
               <div className="flex items-center gap-4 px-2">
-                <Smartphone size={20} className="text-spotify-green" />
+                <div className="hidden lg:flex items-center gap-6 mr-4">
+                  <button onClick={(e) => { e.stopPropagation(); prevSong(); }} className="text-spotify-gray hover:text-white transition-colors">
+                    <SkipBack size={24} />
+                  </button>
+                  <button 
+                    className="bg-white text-black rounded-full p-2 hover:scale-105 transition-transform"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePlay();
+                    }}
+                  >
+                    {isPlaying ? <Pause size={24} className="fill-current" /> : <Play size={24} className="fill-current" />}
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); nextSong(); }} className="text-spotify-gray hover:text-white transition-colors">
+                    <SkipForward size={24} />
+                  </button>
+                </div>
+                <div className="lg:hidden">
+                  <button 
+                    className="text-white"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePlay();
+                    }}
+                  >
+                    {isPlaying ? <Pause size={24} className="fill-current" /> : <Play size={24} className="fill-current" />}
+                  </button>
+                </div>
+                <Smartphone size={20} className="text-spotify-green hidden md:block" />
                 <CheckCircle2 size={20} className="text-spotify-green fill-spotify-green text-black" />
-                <button 
-                  className="text-white"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    togglePlay();
-                  }}
-                >
-                  {isPlaying ? <Pause size={24} className="fill-current" /> : <Play size={24} className="fill-current" />}
-                </button>
               </div>
               {/* Mini Progress Bar */}
               <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-white/10 rounded-full overflow-hidden">
@@ -1286,7 +1313,7 @@ export default function App() {
         </AnimatePresence>
 
         {/* Bottom Navigation */}
-        <nav className="bg-black/90 backdrop-blur-md rounded-2xl flex items-center justify-around py-3 pointer-events-auto border border-white/5">
+        <nav className="bg-black/90 backdrop-blur-md rounded-2xl flex items-center justify-around py-3 pointer-events-auto border border-white/5 lg:hidden">
           <button 
             onClick={() => setActiveTab('home')}
             className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'home' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
