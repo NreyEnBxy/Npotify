@@ -1,0 +1,5 @@
+{
+  "name": "npotify",
+  "description": "A premium Spotify-inspired music streaming app powered by Google Sheets.",
+  "requestFramePermissions": []
+}
