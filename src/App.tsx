@@ -180,7 +180,11 @@ export default function App() {
       }
     } catch (error: any) {
       console.error("Auth error:", error);
-      alert(error.message);
+      if (error.code === 'auth/operation-not-allowed') {
+        alert("ইমেইল/পাসওয়ার্ড লগইন অপশনটি Firebase কনসোল থেকে চালু করা হয়নি। দয়া করে Firebase Console > Authentication > Sign-in method-এ গিয়ে Email/Password এনাবল করুন।");
+      } else {
+        alert("Error: " + error.message);
+      }
     }
   };
 
@@ -262,6 +266,13 @@ export default function App() {
   };
 
   const downloadSong = async (song: Song) => {
+    if (!currentUser) {
+      setShowDownloadMenu(false);
+      alert("লগইন না করে গান ডাউনলোড করা যাবে না। দয়া করে লগইন বা সাইন আপ করুন।");
+      setAuthMode('login');
+      setShowAuthModal(true);
+      return;
+    }
     try {
       const formattedUrl = formatAudioUrl(song.url);
       const response = await fetch(formattedUrl);
@@ -1155,157 +1166,23 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-0 z-50 bg-gradient-to-b from-[#5c5c5c] to-black p-6 flex flex-col pointer-events-auto"
+              className="fixed inset-0 z-50 bg-gradient-to-b from-[#5c5c5c] to-black p-6 flex flex-col pointer-events-auto overflow-y-auto"
             >
-              <header className="flex items-center justify-between mb-10">
-                <button onClick={() => setIsPlayerExpanded(false)} className="text-white">
-                  <ChevronDown size={32} />
-                </button>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] uppercase tracking-widest font-bold text-white/80">Playing from playlist</span>
-                  <span className="text-xs font-bold">Jump back in</span>
-                </div>
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
-                    className="text-white p-2 hover:bg-white/10 rounded-full transition-colors"
-                  >
-                    <MoreHorizontal size={24} />
+              <div className="max-w-md mx-auto w-full flex flex-col h-full min-h-[600px]">
+                <header className="flex items-center justify-between mb-10">
+                  <button onClick={() => setIsPlayerExpanded(false)} className="text-white">
+                    <ChevronDown size={32} />
                   </button>
-                  <AnimatePresence>
-                    {showDownloadMenu && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-[55]" 
-                          onClick={() => setShowDownloadMenu(false)} 
-                        />
-                        <motion.div 
-                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                          className="absolute right-0 top-12 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
-                        >
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (currentSong) downloadSong(currentSong);
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-4 hover:bg-white/10 transition-colors text-left"
-                          >
-                            <Download size={20} className="text-spotify-green" />
-                            <span className="text-sm font-bold text-white">Download this song</span>
-                          </button>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </header>
-
-              <div className="flex-1 flex flex-col justify-center">
-                  <motion.div 
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    drag="x"
-                    dragConstraints={{ left: 0, right: 0 }}
-                    onDragEnd={(_, info) => {
-                      if (info.offset.x > 100) {
-                        prevSong();
-                      } else if (info.offset.x < -100) {
-                        nextSong();
-                      }
-                    }}
-                    whileDrag={{ scale: 0.95 }}
-                    className="aspect-square w-full mb-12 shadow-2xl cursor-grab active:cursor-grabbing overflow-hidden rounded-lg"
-                  >
-                    <img src={currentSong.cover} className="w-full h-full object-cover pointer-events-none aspect-square" referrerPolicy="no-referrer" />
-                  </motion.div>
-
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex flex-col min-w-0">
-                    <h2 className="text-2xl font-bold truncate">{currentSong.title}</h2>
-                    <p className="text-spotify-gray text-lg truncate">{currentSong.artist}</p>
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-white/80">Playing from playlist</span>
+                    <span className="text-xs font-bold">Jump back in</span>
                   </div>
-                  <button 
-                    onClick={() => toggleLike(currentSong.id)}
-                    className={`${likedSongIds.includes(currentSong.id) ? 'text-spotify-green' : 'text-white'} transition-colors`}
-                  >
-                    <Heart size={28} className={likedSongIds.includes(currentSong.id) ? 'fill-current' : ''} />
-                  </button>
-                </div>
-
-                <div className="space-y-2 mb-8">
-                  <div className="relative h-1 w-full group">
-                    <input 
-                      type="range"
-                      min={0}
-                      max={duration || 0}
-                      value={progress}
-                      onChange={handleSeek}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    />
-                    <div className="absolute inset-0 bg-white/20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-white group-hover:bg-spotify-green transition-colors"
-                        style={{ width: `${(progress / duration) * 100 || 0}%` }}
-                      />
-                    </div>
-                    <div 
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ left: `${(progress / duration) * 100 || 0}%`, marginLeft: '-6px' }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-spotify-gray font-medium">
-                    <span>{formatTime(progress)}</span>
-                    <span>{formatTime(duration)}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between px-2">
-                  <button 
-                    onClick={toggleShuffle}
-                    className={`${isShuffle ? 'text-spotify-green' : 'text-spotify-gray'} transition-colors`}
-                  >
-                    <Shuffle size={24} />
-                  </button>
-                  <button onClick={prevSong} className="text-white">
-                    <SkipBack size={36} className="fill-current" />
-                  </button>
-                  <button 
-                    onClick={togglePlay}
-                    className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 transition-transform"
-                  >
-                    {isPlaying ? <Pause size={32} className="fill-current" /> : <Play size={32} className="fill-current ml-1" />}
-                  </button>
-                  <button onClick={nextSong} className="text-white">
-                    <SkipForward size={36} className="fill-current" />
-                  </button>
-                  <button 
-                    onClick={toggleRepeat}
-                    className={`${repeatMode !== 'off' ? 'text-spotify-green' : 'text-spotify-gray'} transition-colors relative`}
-                  >
-                    {repeatMode === 'one' ? (
-                      <div className="relative">
-                        <Repeat size={24} />
-                        <span className="absolute -top-1 -right-1 bg-spotify-green text-black text-[8px] font-bold w-3 h-3 rounded-full flex items-center justify-center">1</span>
-                      </div>
-                    ) : (
-                      <Repeat size={24} />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <footer className="mt-8 flex items-center justify-between">
-                <Smartphone size={20} className="text-spotify-green" />
-                <div className="flex items-center gap-6">
-                  <Music size={20} className="text-white" />
                   <div className="relative">
                     <button 
                       onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
-                      className="text-white p-1 hover:bg-white/10 rounded-full transition-colors"
+                      className="text-white p-2 hover:bg-white/10 rounded-full transition-colors"
                     >
-                      <MoreHorizontal size={20} />
+                      <MoreHorizontal size={24} />
                     </button>
                     <AnimatePresence>
                       {showDownloadMenu && (
@@ -1315,10 +1192,10 @@ export default function App() {
                             onClick={() => setShowDownloadMenu(false)} 
                           />
                           <motion.div 
-                            initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                            initial={{ opacity: 0, scale: 0.9, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                            className="absolute right-0 bottom-full mb-2 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
+                            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                            className="absolute right-0 top-12 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
                           >
                             <button 
                               onClick={(e) => {
@@ -1335,8 +1212,144 @@ export default function App() {
                       )}
                     </AnimatePresence>
                   </div>
+                </header>
+
+                <div className="flex-1 flex flex-col justify-center">
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      drag="x"
+                      dragConstraints={{ left: 0, right: 0 }}
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 100) {
+                          prevSong();
+                        } else if (info.offset.x < -100) {
+                          nextSong();
+                        }
+                      }}
+                      whileDrag={{ scale: 0.95 }}
+                      className="aspect-square w-full max-w-[400px] mx-auto mb-12 shadow-2xl cursor-grab active:cursor-grabbing overflow-hidden rounded-lg"
+                    >
+                      <img src={currentSong.cover} className="w-full h-full object-cover pointer-events-none aspect-square" referrerPolicy="no-referrer" />
+                    </motion.div>
+
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="flex flex-col min-w-0">
+                      <h2 className="text-2xl font-bold truncate">{currentSong.title}</h2>
+                      <p className="text-spotify-gray text-lg truncate">{currentSong.artist}</p>
+                    </div>
+                    <button 
+                      onClick={() => toggleLike(currentSong.id)}
+                      className={`${likedSongIds.includes(currentSong.id) ? 'text-spotify-green' : 'text-white'} transition-colors`}
+                    >
+                      <Heart size={28} className={likedSongIds.includes(currentSong.id) ? 'fill-current' : ''} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 mb-8">
+                    <div className="relative h-1 w-full group">
+                      <input 
+                        type="range"
+                        min={0}
+                        max={duration || 0}
+                        value={progress}
+                        onChange={handleSeek}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <div className="absolute inset-0 bg-white/20 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-white group-hover:bg-spotify-green transition-colors"
+                          style={{ width: `${(progress / duration) * 100 || 0}%` }}
+                        />
+                      </div>
+                      <div 
+                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ left: `${(progress / duration) * 100 || 0}%`, marginLeft: '-6px' }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-spotify-gray font-medium">
+                      <span>{formatTime(progress)}</span>
+                      <span>{formatTime(duration)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between px-2">
+                    <button 
+                      onClick={toggleShuffle}
+                      className={`${isShuffle ? 'text-spotify-green' : 'text-spotify-gray'} transition-colors`}
+                    >
+                      <Shuffle size={24} />
+                    </button>
+                    <button onClick={prevSong} className="text-white">
+                      <SkipBack size={36} className="fill-current" />
+                    </button>
+                    <button 
+                      onClick={togglePlay}
+                      className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-black hover:scale-105 transition-transform"
+                    >
+                      {isPlaying ? <Pause size={32} className="fill-current" /> : <Play size={32} className="fill-current ml-1" />}
+                    </button>
+                    <button onClick={nextSong} className="text-white">
+                      <SkipForward size={36} className="fill-current" />
+                    </button>
+                    <button 
+                      onClick={toggleRepeat}
+                      className={`${repeatMode !== 'off' ? 'text-spotify-green' : 'text-spotify-gray'} transition-colors relative`}
+                    >
+                      {repeatMode === 'one' ? (
+                        <div className="relative">
+                          <Repeat size={24} />
+                          <span className="absolute -top-1 -right-1 bg-spotify-green text-black text-[8px] font-bold w-3 h-3 rounded-full flex items-center justify-center">1</span>
+                        </div>
+                      ) : (
+                        <Repeat size={24} />
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </footer>
+
+                <footer className="mt-8 flex items-center justify-between">
+                  <Smartphone size={20} className="text-spotify-green" />
+                  <div className="flex items-center gap-6">
+                    <Music size={20} className="text-white" />
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
+                        className="text-white p-1 hover:bg-white/10 rounded-full transition-colors"
+                      >
+                        <MoreHorizontal size={20} />
+                      </button>
+                      <AnimatePresence>
+                        {showDownloadMenu && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-[55]" 
+                              onClick={() => setShowDownloadMenu(false)} 
+                            />
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                              className="absolute right-0 bottom-full mb-2 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
+                            >
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (currentSong) downloadSong(currentSong);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-4 hover:bg-white/10 transition-colors text-left"
+                              >
+                                <Download size={20} className="text-spotify-green" />
+                                <span className="text-sm font-bold text-white">Download this song</span>
+                              </button>
+                            </motion.div>
+                          </>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </footer>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
