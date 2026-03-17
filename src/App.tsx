@@ -21,7 +21,8 @@ import {
   Shuffle,
   Repeat,
   Circle,
-  ArrowLeft
+  ArrowLeft,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -74,8 +75,29 @@ export default function App() {
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const downloadSong = async (song: Song) => {
+    try {
+      const formattedUrl = formatAudioUrl(song.url);
+      const response = await fetch(formattedUrl);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${song.title} - ${song.artist}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      setShowDownloadMenu(false);
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("Download failed. This might be due to CORS restrictions on the source file.");
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
@@ -254,7 +276,7 @@ export default function App() {
                 className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
               >
                 <img 
-                  src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                  src="https://files.catbox.moe/uxcbs7.jpeg" 
                   className="w-full h-full object-cover" 
                   alt="IShowSpeed"
                   referrerPolicy="no-referrer"
@@ -342,7 +364,7 @@ export default function App() {
                 className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform shrink-0"
               >
                 <img 
-                  src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                  src="https://files.catbox.moe/uxcbs7.jpeg" 
                   className="w-full h-full object-cover" 
                   alt="IShowSpeed"
                   referrerPolicy="no-referrer"
@@ -420,7 +442,7 @@ export default function App() {
                     className="w-8 h-8 rounded-full overflow-hidden border border-white/10 cursor-pointer hover:scale-105 transition-transform"
                   >
                     <img 
-                      src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                      src="https://files.catbox.moe/uxcbs7.jpeg" 
                       className="w-full h-full object-cover" 
                       alt="IShowSpeed"
                       referrerPolicy="no-referrer"
@@ -485,7 +507,7 @@ export default function App() {
                 <div className="flex items-center gap-4 mb-8">
                   <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-spotify-green shadow-lg">
                     <img 
-                      src="https://i.ytimg.com/vi/m_W2V_m8YmY/hqdefault.jpg" 
+                      src="https://files.catbox.moe/uxcbs7.jpeg" 
                       className="w-full h-full object-cover" 
                       alt="IShowSpeed"
                       referrerPolicy="no-referrer"
@@ -585,9 +607,41 @@ export default function App() {
                   <span className="text-[10px] uppercase tracking-widest font-bold text-white/80">Playing from playlist</span>
                   <span className="text-xs font-bold">Jump back in</span>
                 </div>
-                <button className="text-white">
-                  <MoreHorizontal size={24} />
-                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
+                    className="text-white p-2 hover:bg-white/10 rounded-full transition-colors"
+                  >
+                    <MoreHorizontal size={24} />
+                  </button>
+                  <AnimatePresence>
+                    {showDownloadMenu && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-[55]" 
+                          onClick={() => setShowDownloadMenu(false)} 
+                        />
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                          className="absolute right-0 top-12 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
+                        >
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (currentSong) downloadSong(currentSong);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-4 hover:bg-white/10 transition-colors text-left"
+                          >
+                            <Download size={20} className="text-spotify-green" />
+                            <span className="text-sm font-bold text-white">Download this song</span>
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
               </header>
 
               <div className="flex-1 flex flex-col justify-center">
@@ -685,7 +739,41 @@ export default function App() {
                 <Smartphone size={20} className="text-spotify-green" />
                 <div className="flex items-center gap-6">
                   <Music size={20} className="text-white" />
-                  <MoreHorizontal size={20} className="text-white" />
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
+                      className="text-white p-1 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <MoreHorizontal size={20} />
+                    </button>
+                    <AnimatePresence>
+                      {showDownloadMenu && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-[55]" 
+                            onClick={() => setShowDownloadMenu(false)} 
+                          />
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                            className="absolute right-0 bottom-full mb-2 bg-[#282828] min-w-[200px] rounded-md shadow-2xl z-[60] overflow-hidden border border-white/10"
+                          >
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (currentSong) downloadSong(currentSong);
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-4 hover:bg-white/10 transition-colors text-left"
+                            >
+                              <Download size={20} className="text-spotify-green" />
+                              <span className="text-sm font-bold text-white">Download this song</span>
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </footer>
             </motion.div>
