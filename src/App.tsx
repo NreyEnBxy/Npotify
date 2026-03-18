@@ -197,45 +197,47 @@ export default function App() {
 
   // Handle URL sub-pages and back button
   useEffect(() => {
-    const handlePopState = () => {
-      const path = window.location.pathname.replace('/', '');
-      
-      // Handle Player Expansion
-      if (path === 'player') {
-        setIsPlayerExpanded(true);
-      } else {
-        setIsPlayerExpanded(false);
-      }
+    const path = location.pathname.replace('/', '');
+    
+    // Handle Player Expansion
+    if (path === 'player') {
+      setIsPlayerExpanded(true);
+    } else {
+      setIsPlayerExpanded(false);
+    }
 
-      const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
-      // If we are in player mode, we don't necessarily want to change the tab
-      // but we need to know which tab to go back to.
-      // For now, let's just handle the tab if it's not 'player'
-      if (path !== 'player') {
-        if (validTabs.includes(path)) {
-          setActiveTab(path as any);
-        } else {
-          setActiveTab('home');
-        }
+    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
+    if (path !== 'player') {
+      if (validTabs.includes(path)) {
+        setActiveTab(path as any);
+      } else if (path === '') {
+        setActiveTab('home');
       }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
-    const currentPath = window.location.pathname.replace('/', '');
     let targetPath = activeTab === 'home' ? '' : activeTab;
     
     if (isPlayerExpanded) {
       targetPath = 'player';
     }
 
-    if (currentPath !== targetPath) {
-      window.history.pushState({ tab: activeTab, expanded: isPlayerExpanded }, '', `/${targetPath}`);
+    const newParams = new URLSearchParams();
+    if (currentSongIndex !== null) {
+      newParams.set('songId', currentSongIndex.toString());
     }
-  }, [activeTab, isPlayerExpanded]);
+    
+    if (activeTab === 'reels' && selectedReelId !== null) {
+      newParams.set('reelId', selectedReelId.toString());
+    }
+
+    const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
+    
+    if (location.pathname + location.search !== targetUrl) {
+      navigate(targetUrl, { replace: true });
+    }
+  }, [activeTab, isPlayerExpanded, currentSongIndex, selectedReelId, navigate, location.pathname, location.search]);
 
   useEffect(() => {
     if (isPlayerExpanded && syncedLyrics.length > 0 && lyricsContainerRef.current) {
@@ -515,6 +517,7 @@ export default function App() {
         const reel = songs.find(s => s.id === id && s.isReel);
         if (reel) {
           setActiveTab('reels');
+          setSelectedReelId(id);
           // Wait for reels to render then scroll
           setTimeout(() => {
             const reelElement = document.getElementById(`reel-${id}`);
@@ -680,6 +683,7 @@ export default function App() {
     } else {
       setCurrentSongIndex(index);
     }
+    setIsPlayerExpanded(true);
   };
 
   const nextSong = () => {
@@ -1168,6 +1172,14 @@ export default function App() {
           <div 
             ref={reelsContainerRef}
             className="h-full w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
+            onScroll={(e) => {
+              const container = e.currentTarget;
+              const index = Math.round(container.scrollTop / container.clientHeight);
+              const reelSongs = songs.filter(s => s.isReel);
+              if (reelSongs[index] && selectedReelId !== reelSongs[index].id) {
+                setSelectedReelId(reelSongs[index].id);
+              }
+            }}
             onWheel={(e) => {
               if (reelsContainerRef.current && !isScrolling) {
                 const container = reelsContainerRef.current;
