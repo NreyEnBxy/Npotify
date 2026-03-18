@@ -163,6 +163,7 @@ export default function App() {
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [hasHandledDeepLink, setHasHandledDeepLink] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [isReelsMuted, setIsReelsMuted] = useState(false);
   const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
@@ -452,6 +453,59 @@ export default function App() {
       showToast("Download failed. This might be due to CORS restrictions.", 'error');
     }
   };
+
+  const shareContent = (item: Song) => {
+    const url = new URL(window.location.origin + window.location.pathname);
+    if (item.isReel) {
+      url.searchParams.set('reelId', item.id.toString());
+    } else {
+      url.searchParams.set('songId', item.id.toString());
+    }
+    const shareUrl = url.toString();
+
+    if (navigator.share) {
+      navigator.share({
+        title: item.title,
+        text: `Check out ${item.title} by ${item.artist} on Spotify Clone!`,
+        url: shareUrl,
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showToast("Link copied to clipboard!", 'success');
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (songs.length > 0 && !hasHandledDeepLink) {
+      const params = new URLSearchParams(window.location.search);
+      const songId = params.get('songId');
+      const reelId = params.get('reelId');
+
+      if (songId) {
+        const id = parseInt(songId);
+        const song = songs.find(s => s.id === id);
+        if (song) {
+          playSong(id);
+          setIsPlayerExpanded(true);
+        }
+      } else if (reelId) {
+        const id = parseInt(reelId);
+        const reel = songs.find(s => s.id === id && s.isReel);
+        if (reel) {
+          setActiveTab('reels');
+          // Wait for reels to render then scroll
+          setTimeout(() => {
+            const reelElement = document.getElementById(`reel-${id}`);
+            if (reelElement) {
+              reelElement.scrollIntoView({ behavior: 'smooth' });
+            }
+          }, 500);
+        }
+      }
+      setHasHandledDeepLink(true);
+    }
+  }, [songs.length, hasHandledDeepLink]);
 
   useEffect(() => {
     if (activeTab === 'reels' && isPlaying) {
@@ -1208,13 +1262,7 @@ export default function App() {
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (navigator.share) {
-                            navigator.share({
-                              title: reel.title,
-                              text: `Check out this reel by ${reel.artist}`,
-                              url: window.location.href
-                            });
-                          }
+                          shareContent(reel);
                         }}
                         className="flex flex-col items-center gap-1 group"
                       >
@@ -1764,9 +1812,32 @@ export default function App() {
                     <span className="text-[10px] uppercase tracking-widest font-bold text-white/60">Playing from playlist</span>
                     <span className="text-xs font-bold">Jump back in</span>
                   </div>
-                  <button className="text-white">
-                    <MoreVertical size={24} />
-                  </button>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                      className="text-white p-2 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <MoreVertical size={24} />
+                    </button>
+                    <AnimatePresence>
+                      {showDownloadMenu && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                          className="absolute right-0 top-12 w-48 bg-[#282828] rounded-md shadow-2xl z-50 overflow-hidden border border-white/10"
+                        >
+                          <button 
+                            onClick={() => downloadSong(currentSong)}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/10 text-white text-sm font-medium transition-colors"
+                          >
+                            <Download size={18} />
+                            Download
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </header>
 
                 <div className="flex-1 flex flex-col">
@@ -1892,7 +1963,9 @@ export default function App() {
                   <div className="flex items-center justify-between mb-8">
                     <Smartphone size={24} className="text-spotify-green" />
                     <div className="flex items-center gap-8">
-                      <Share2 size={24} className="text-white" />
+                      <button onClick={() => shareContent(currentSong)} className="text-white hover:text-spotify-green transition-colors">
+                        <Share2 size={24} />
+                      </button>
                       <ListMusic size={24} className="text-white" />
                     </div>
                   </div>
