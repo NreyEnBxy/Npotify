@@ -28,7 +28,9 @@ import {
   Clapperboard,
   Share2,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -75,6 +77,10 @@ const formatAudioUrl = (url: string) => {
   return url;
 };
 
+const Skeleton = ({ className, ...props }: any) => (
+  <div className={`animate-pulse bg-white/10 rounded-md ${className}`} {...props} />
+);
+
 interface Song {
   id: number;
   title: string;
@@ -109,6 +115,8 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [isReelsMuted, setIsReelsMuted] = useState(true);
+  const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -667,47 +675,66 @@ export default function App() {
 
             {/* Recent Grid */}
             <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4 mb-8">
-              {songs.filter(s => !s.isReel).slice(0, 8).map((song, i) => (
-                <div 
-                  key={i} 
-                  onClick={() => playSong(song.id)}
-                  className="bg-white/10 hover:bg-white/20 transition-colors rounded flex items-center gap-2 overflow-hidden group cursor-pointer h-14"
-                >
-                  <img 
-                    src={song.cover} 
-                    className="w-14 h-14 object-cover shrink-0 rounded-md aspect-square" 
-                    referrerPolicy="no-referrer" 
-                  />
-                  <span className="text-xs font-bold truncate pr-2">{song.artist}</span>
-                </div>
-              ))}
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="bg-white/5 rounded flex items-center gap-2 overflow-hidden h-14">
+                    <Skeleton className="w-14 h-14 rounded-none" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                ))
+              ) : (
+                songs.filter(s => !s.isReel).slice(0, 8).map((song, i) => (
+                  <div 
+                    key={i} 
+                    onClick={() => playSong(song.id)}
+                    className="bg-white/10 hover:bg-white/20 transition-colors rounded flex items-center gap-2 overflow-hidden group cursor-pointer h-14"
+                  >
+                    <img 
+                      src={song.cover} 
+                      className="w-14 h-14 object-cover shrink-0 rounded-md aspect-square" 
+                      referrerPolicy="no-referrer" 
+                    />
+                    <span className="text-xs font-bold truncate pr-2">{song.artist}</span>
+                  </div>
+                ))
+              )}
             </section>
 
             {/* Jump back in */}
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Jump back in</h2>
               <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
-                {songs.filter(s => !s.isReel).map((song, i) => (
-                  <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
-                    <div className="relative aspect-square mb-3">
-                      <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
-                      {i % 3 === 0 && (
-                        <div className="absolute top-2 left-2 w-5 h-5 bg-spotify-green rounded-full flex items-center justify-center">
-                          <Music size={10} className="text-black" />
-                        </div>
-                      )}
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="min-w-[160px] max-w-[160px] space-y-3">
+                      <Skeleton className="aspect-square w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
                     </div>
-                    <h3 className="font-bold text-sm truncate">{song.title}</h3>
-                    <p className="text-spotify-gray text-xs mt-1 line-clamp-2 leading-tight">
-                      Playlist • {song.artist}
-                    </p>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  songs.filter(s => !s.isReel).map((song, i) => (
+                    <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
+                      <div className="relative aspect-square mb-3">
+                        <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
+                        {i % 3 === 0 && (
+                          <div className="absolute top-2 left-2 w-5 h-5 bg-spotify-green rounded-full flex items-center justify-center">
+                            <Music size={10} className="text-black" />
+                          </div>
+                        )}
+                      </div>
+                      <h3 className="font-bold text-sm truncate">{song.title}</h3>
+                      <p className="text-spotify-gray text-xs mt-1 line-clamp-2 leading-tight">
+                        Playlist • {song.artist}
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
 
             {/* Reels on Home */}
-            {songs.filter(s => s.isReel).length > 0 && (
+            {(loading || songs.filter(s => s.isReel).length > 0) && (
               <section className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
@@ -719,26 +746,32 @@ export default function App() {
                   </button>
                 </div>
                 <div className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4">
-                  {songs.filter(s => s.isReel).map((reel, i) => (
-                    <div 
-                      key={i} 
-                      onClick={() => setActiveTab('reels')}
-                      className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
-                    >
-                      <img 
-                        src={reel.cover} 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
-                        referrerPolicy="no-referrer" 
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-2">
-                        <div className="flex items-center gap-1 mb-1">
-                          <Clapperboard size={12} className="text-white" />
-                          <span className="text-[10px] font-bold text-white truncate">{reel.artist}</span>
+                  {loading ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="min-w-[120px] max-w-[120px] aspect-[9/16] shrink-0" />
+                    ))
+                  ) : (
+                    songs.filter(s => s.isReel).map((reel, i) => (
+                      <div 
+                        key={i} 
+                        onClick={() => setActiveTab('reels')}
+                        className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
+                      >
+                        <img 
+                          src={reel.cover} 
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                          referrerPolicy="no-referrer" 
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Clapperboard size={12} className="text-white" />
+                            <span className="text-[10px] font-bold text-white truncate">{reel.artist}</span>
+                          </div>
+                          <h3 className="text-[10px] text-white/80 line-clamp-1">{reel.title}</h3>
                         </div>
-                        <h3 className="text-[10px] text-white/80 line-clamp-1">{reel.title}</h3>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </section>
             )}
@@ -807,7 +840,17 @@ export default function App() {
 
             {searchQuery ? (
               <div className="space-y-4">
-                {filteredSongs.length > 0 ? (
+                {loading ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <Skeleton className="w-12 h-12 rounded" />
+                      <div className="flex flex-col gap-2 flex-1">
+                        <Skeleton className="h-4 w-1/2" />
+                        <Skeleton className="h-3 w-1/4" />
+                      </div>
+                    </div>
+                  ))
+                ) : filteredSongs.length > 0 ? (
                   filteredSongs.map((song) => (
                     <div 
                       key={song.id} 
@@ -833,23 +876,29 @@ export default function App() {
               <div>
                 <h3 className="text-base font-bold mb-4">Browse all</h3>
                 <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { name: 'Podcasts', color: 'bg-[#E13300]' },
-                    { name: 'Live Events', color: 'bg-[#7358FF]' },
-                    { name: 'Made For You', color: 'bg-[#1E3264]' },
-                    { name: 'New Releases', color: 'bg-[#E8115B]' },
-                    { name: 'Hindi', color: 'bg-[#608108]' },
-                    { name: 'Punjabi', color: 'bg-[#B02897]' },
-                    { name: 'Tamil', color: 'bg-[#A56752]' },
-                    { name: 'Telugu', color: 'bg-[#D84000]' },
-                  ].map((cat, i) => (
-                    <div key={i} className={`${cat.color} aspect-[1.6/1] rounded-lg p-3 relative overflow-hidden cursor-pointer`}>
-                      <span className="font-bold text-lg leading-tight">{cat.name}</span>
-                      <div className="absolute -right-4 -bottom-2 w-20 h-20 rotate-[25deg] shadow-xl">
-                        <img src={`https://picsum.photos/seed/${cat.name}/100/100`} className="w-full h-full object-cover rounded" referrerPolicy="no-referrer" />
+                  {loading ? (
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="aspect-[1.6/1] rounded-lg" />
+                    ))
+                  ) : (
+                    [
+                      { name: 'Podcasts', color: 'bg-[#E13300]' },
+                      { name: 'Live Events', color: 'bg-[#7358FF]' },
+                      { name: 'Made For You', color: 'bg-[#1E3264]' },
+                      { name: 'New Releases', color: 'bg-[#E8115B]' },
+                      { name: 'Hindi', color: 'bg-[#608108]' },
+                      { name: 'Punjabi', color: 'bg-[#B02897]' },
+                      { name: 'Tamil', color: 'bg-[#A56752]' },
+                      { name: 'Telugu', color: 'bg-[#D84000]' },
+                    ].map((cat, i) => (
+                      <div key={i} className={`${cat.color} aspect-[1.6/1] rounded-lg p-3 relative overflow-hidden cursor-pointer`}>
+                        <span className="font-bold text-lg leading-tight">{cat.name}</span>
+                        <div className="absolute -right-4 -bottom-2 w-20 h-20 rotate-[25deg] shadow-xl">
+                          <img src={`https://picsum.photos/seed/${cat.name}/100/100`} className="w-full h-full object-cover rounded" referrerPolicy="no-referrer" />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -873,11 +922,28 @@ export default function App() {
               }
             }}
           >
-            {songs.filter(s => s.isReel).length > 0 ? (
+            {loading ? (
+              // Reels Skeleton
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
+                  <div className="relative h-full w-full max-w-[calc(100vh*9/16)] bg-zinc-900 flex items-center justify-center overflow-hidden">
+                    <Skeleton className="w-full h-full rounded-none" />
+                    <div className="absolute bottom-24 left-4 right-16 z-10 space-y-2">
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                    <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                      <Skeleton className="w-10 h-10 rounded-full" />
+                      <Skeleton className="w-10 h-10 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : songs.filter(s => s.isReel).length > 0 ? (
               songs.filter(s => s.isReel).map((reel, index) => (
                 <div key={reel.id} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
                   <div 
-                    className="relative h-full w-full max-w-[calc(100vh*9/16)] bg-zinc-900 shadow-2xl flex items-center justify-center overflow-hidden"
+                    className="relative h-full w-full md:max-w-[calc(100vh*9/16)] bg-zinc-900 shadow-2xl flex items-center justify-center overflow-hidden"
                     style={{ aspectRatio: '9/16' }}
                   >
                     <video 
@@ -885,18 +951,37 @@ export default function App() {
                       src={reel.url} 
                       className="h-full w-full object-cover" 
                       loop 
-                      muted
+                      muted={isReelsMuted}
                       playsInline
                       webkit-playsinline="true"
                       onClick={(e) => {
                         const video = e.currentTarget;
                         if (video.paused) {
                           video.play().catch(err => console.error("Play failed:", err));
+                          setTapAnimation({ id: reel.id, type: 'play' });
                         } else {
                           video.pause();
+                          setTapAnimation({ id: reel.id, type: 'pause' });
                         }
+                        setTimeout(() => setTapAnimation(null), 500);
                       }}
                     />
+
+                    {/* Tap Animation Overlay */}
+                    <AnimatePresence>
+                      {tapAnimation?.id === reel.id && (
+                        <motion.div 
+                          initial={{ scale: 0.5, opacity: 0 }}
+                          animate={{ scale: 1.5, opacity: 1 }}
+                          exit={{ scale: 2, opacity: 0 }}
+                          className="absolute z-20 pointer-events-none"
+                        >
+                          <div className="bg-black/40 p-6 rounded-full backdrop-blur-sm">
+                            {tapAnimation.type === 'play' ? <Play size={48} className="text-white fill-current" /> : <Pause size={48} className="text-white fill-current" />}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     
                     {/* Overlay Info */}
                     <div className="absolute bottom-24 left-4 right-16 z-10 pointer-events-none">
@@ -909,6 +994,15 @@ export default function App() {
 
                     {/* Side Actions */}
                     <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setIsReelsMuted(!isReelsMuted); }}
+                        className="flex flex-col items-center gap-1 group"
+                      >
+                        <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm group-hover:bg-black/40 transition-colors">
+                          {isReelsMuted ? <VolumeX size={28} className="text-white drop-shadow-lg" /> : <Volume2 size={28} className="text-spotify-green drop-shadow-lg" />}
+                        </div>
+                        <span className="text-[10px] font-bold text-white drop-shadow-md">{isReelsMuted ? 'Muted' : 'Unmuted'}</span>
+                      </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); toggleLike(reel.id); }}
                         className="flex flex-col items-center gap-1 group"
@@ -1035,12 +1129,22 @@ export default function App() {
                     </div>
                     <div>
                       <h3 className="font-bold text-lg">Liked Songs</h3>
-                      <p className="text-sm opacity-80">{songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length} songs</p>
+                      <p className="text-sm opacity-80">{loading ? '...' : songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length} songs</p>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    {songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
+                    {loading ? (
+                      Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <Skeleton className="w-12 h-12 rounded" />
+                          <div className="flex flex-col gap-2 flex-1">
+                            <Skeleton className="h-4 w-1/2" />
+                            <Skeleton className="h-3 w-1/4" />
+                          </div>
+                        </div>
+                      ))
+                    ) : songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
                       songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).map((song) => (
                         <div 
                           key={song.id} 
@@ -1075,12 +1179,16 @@ export default function App() {
                     </div>
                     <div>
                       <h3 className="font-bold text-lg">Liked Reels</h3>
-                      <p className="text-sm opacity-80">{songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length} reels</p>
+                      <p className="text-sm opacity-80">{loading ? '...' : songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length} reels</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
-                    {songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
+                    {loading ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <Skeleton key={i} className="aspect-[9/16] rounded-md" />
+                      ))
+                    ) : songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
                       songs.filter(s => s.isReel && likedSongIds.includes(s.id)).map((reel) => (
                         <div 
                           key={reel.id} 
