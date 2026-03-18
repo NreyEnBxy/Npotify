@@ -972,19 +972,19 @@ export default function App() {
                       {tapAnimation?.id === reel.id && (
                         <motion.div 
                           initial={{ scale: 0.5, opacity: 0 }}
-                          animate={{ scale: 1.5, opacity: 1 }}
-                          exit={{ scale: 2, opacity: 0 }}
+                          animate={{ scale: 1.2, opacity: 1 }}
+                          exit={{ scale: 1.5, opacity: 0 }}
                           className="absolute z-20 pointer-events-none"
                         >
-                          <div className="bg-black/40 p-6 rounded-full backdrop-blur-sm">
-                            {tapAnimation.type === 'play' ? <Play size={48} className="text-white fill-current" /> : <Pause size={48} className="text-white fill-current" />}
+                          <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm">
+                            {tapAnimation.type === 'play' ? <Play size={32} className="text-white fill-current" /> : <Pause size={32} className="text-white fill-current" />}
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
                     
                     {/* Overlay Info */}
-                    <div className="absolute bottom-24 left-4 right-16 z-10 pointer-events-none">
+                    <div className="absolute bottom-36 left-4 right-16 z-10 pointer-events-none">
                       <h3 className="text-lg font-bold text-white drop-shadow-lg mb-1">{reel.title}</h3>
                       <p className="text-sm text-white/80 drop-shadow-md flex items-center gap-2">
                         <Music size={14} />
@@ -993,7 +993,7 @@ export default function App() {
                     </div>
 
                     {/* Side Actions */}
-                    <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                    <div className="absolute bottom-40 right-4 flex flex-col gap-6 items-center z-10">
                       <button 
                         onClick={(e) => { e.stopPropagation(); setIsReelsMuted(!isReelsMuted); }}
                         className="flex flex-col items-center gap-1 group"
