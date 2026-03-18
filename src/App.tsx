@@ -46,6 +46,7 @@ import {
   updateProfile,
   updatePassword
 } from 'firebase/auth';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { 
   doc, 
   setDoc, 
@@ -163,6 +164,9 @@ export default function App() {
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [hasHandledDeepLink, setHasHandledDeepLink] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [isReelsMuted, setIsReelsMuted] = useState(false);
@@ -455,7 +459,7 @@ export default function App() {
   };
 
   const shareContent = (item: Song) => {
-    const url = new URL(window.location.origin + window.location.pathname);
+    const url = new URL(window.location.origin);
     if (item.isReel) {
       url.searchParams.set('reelId', item.id.toString());
     } else {
@@ -478,9 +482,8 @@ export default function App() {
 
   useEffect(() => {
     if (songs.length > 0 && !hasHandledDeepLink) {
-      const params = new URLSearchParams(window.location.search);
-      const songId = params.get('songId');
-      const reelId = params.get('reelId');
+      const songId = searchParams.get('songId');
+      const reelId = searchParams.get('reelId');
 
       if (songId) {
         const id = parseInt(songId);
@@ -505,7 +508,7 @@ export default function App() {
       }
       setHasHandledDeepLink(true);
     }
-  }, [songs.length, hasHandledDeepLink]);
+  }, [songs.length, hasHandledDeepLink, searchParams]);
 
   useEffect(() => {
     if (activeTab === 'reels' && isPlaying) {
