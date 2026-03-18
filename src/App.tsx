@@ -106,17 +106,24 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'reels' | 'premium' | 'library'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'reels' | 'premium' | 'library'>(() => {
+    const path = window.location.pathname.replace('/', '');
+    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
+    return validTabs.includes(path) ? (path as any) : 'home';
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
+  const [isPlayerExpanded, setIsPlayerExpanded] = useState(() => {
+    return window.location.pathname.replace('/', '') === 'player';
+  });
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [isReelsMuted, setIsReelsMuted] = useState(true);
+  const [isReelsMuted, setIsReelsMuted] = useState(false);
   const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
+  const [selectedReelId, setSelectedReelId] = useState<number | null>(null);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -136,6 +143,48 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reelsContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+
+  // Handle URL sub-pages and back button
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace('/', '');
+      
+      // Handle Player Expansion
+      if (path === 'player') {
+        setIsPlayerExpanded(true);
+      } else {
+        setIsPlayerExpanded(false);
+      }
+
+      const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
+      // If we are in player mode, we don't necessarily want to change the tab
+      // but we need to know which tab to go back to.
+      // For now, let's just handle the tab if it's not 'player'
+      if (path !== 'player') {
+        if (validTabs.includes(path)) {
+          setActiveTab(path as any);
+        } else {
+          setActiveTab('home');
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const currentPath = window.location.pathname.replace('/', '');
+    let targetPath = activeTab === 'home' ? '' : activeTab;
+    
+    if (isPlayerExpanded) {
+      targetPath = 'player';
+    }
+
+    if (currentPath !== targetPath) {
+      window.history.pushState({ tab: activeTab, expanded: isPlayerExpanded }, '', `/${targetPath}`);
+    }
+  }, [activeTab, isPlayerExpanded]);
 
   useEffect(() => {
     if (activeTab === 'reels') {
@@ -597,6 +646,19 @@ export default function App() {
     </div>
   );
 
+  useEffect(() => {
+    if (activeTab === 'reels' && selectedReelId !== null && reelsContainerRef.current) {
+      // Use a small timeout to ensure the DOM is ready
+      setTimeout(() => {
+        const reelElement = document.getElementById(`reel-${selectedReelId}`);
+        if (reelElement) {
+          reelElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+        }
+        setSelectedReelId(null);
+      }, 100);
+    }
+  }, [activeTab, selectedReelId]);
+
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-spotify-base text-white overflow-hidden font-sans">
       {/* Persistent Sidebar for Desktop */}
@@ -754,7 +816,10 @@ export default function App() {
                     songs.filter(s => s.isReel).map((reel, i) => (
                       <div 
                         key={i} 
-                        onClick={() => setActiveTab('reels')}
+                        onClick={() => {
+                          setSelectedReelId(reel.id);
+                          setActiveTab('reels');
+                        }}
                         className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
                       >
                         <img 
@@ -941,7 +1006,11 @@ export default function App() {
               ))
             ) : songs.filter(s => s.isReel).length > 0 ? (
               songs.filter(s => s.isReel).map((reel, index) => (
-                <div key={reel.id} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
+                <div 
+                  key={reel.id} 
+                  id={`reel-${reel.id}`}
+                  className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden"
+                >
                   <div 
                     className="relative h-full w-full md:max-w-[calc(100vh*9/16)] bg-zinc-900 shadow-2xl flex items-center justify-center overflow-hidden"
                     style={{ aspectRatio: '9/16' }}
@@ -1193,8 +1262,8 @@ export default function App() {
                         <div 
                           key={reel.id} 
                           onClick={() => {
+                            setSelectedReelId(reel.id);
                             setActiveTab('reels');
-                            // Scroll to this reel logic could be added here
                           }}
                           className="aspect-[9/16] relative rounded-md overflow-hidden cursor-pointer group"
                         >
@@ -1483,8 +1552,21 @@ export default function App() {
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
-              className="bg-[#282828] rounded-lg p-2 flex items-center justify-between shadow-2xl pointer-events-auto mb-2 lg:mb-4 lg:mx-4"
+              className="bg-[#282828] rounded-lg p-2 flex items-center justify-between shadow-2xl pointer-events-auto mb-2 lg:mb-4 lg:mx-4 relative overflow-hidden touch-none"
               onClick={() => setIsPlayerExpanded(true)}
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_e, info) => {
+                if (info.offset.y > 50) {
+                  setIsPlaying(false);
+                  setCurrentSongIndex(null);
+                  if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                  }
+                }
+              }}
             >
               <div className="flex items-center gap-3 overflow-hidden">
                 <img src={currentSong.cover} className="w-10 h-10 lg:w-14 lg:h-14 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
