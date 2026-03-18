@@ -458,7 +458,7 @@ export default function App() {
     }
   };
 
-  const shareContent = (item: Song) => {
+  const shareContent = async (item: Song) => {
     const url = new URL(window.location.origin);
     if (item.isReel) {
       url.searchParams.set('reelId', item.id.toString());
@@ -468,15 +468,33 @@ export default function App() {
     const shareUrl = url.toString();
 
     if (navigator.share) {
-      navigator.share({
-        title: item.title,
-        text: `Check out ${item.title} by ${item.artist} on Spotify Clone!`,
-        url: shareUrl,
-      }).catch(console.error);
+      try {
+        await navigator.share({
+          title: item.title,
+          text: `Check out ${item.title} by ${item.artist} on Spotify Clone!`,
+          url: shareUrl,
+        });
+      } catch (error: any) {
+        // If sharing fails (e.g. canceled or blocked by browser), fallback to clipboard
+        if (error.name !== 'AbortError') {
+          console.error("Share failed:", error);
+        }
+        
+        // Always fallback to clipboard for better UX in restricted environments
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast("Link copied to clipboard!", 'success');
+        } catch (clipboardError) {
+          console.error("Clipboard fallback failed:", clipboardError);
+        }
+      }
     } else {
-      navigator.clipboard.writeText(shareUrl).then(() => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
         showToast("Link copied to clipboard!", 'success');
-      });
+      } catch (error) {
+        console.error("Clipboard failed:", error);
+      }
     }
   };
 
