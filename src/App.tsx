@@ -27,7 +27,9 @@ import {
   X,
   AlertCircle,
   Clapperboard,
-  Share2
+  Share2,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -124,6 +126,7 @@ export default function App() {
   };
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const reelsContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -669,6 +672,43 @@ export default function App() {
               </div>
             </section>
 
+            {/* Reels on Home */}
+            {songs.filter(s => s.isReel).length > 0 && (
+              <section className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
+                  <button 
+                    onClick={() => setActiveTab('reels')}
+                    className="text-spotify-gray hover:text-white text-sm font-bold transition-colors"
+                  >
+                    Show all
+                  </button>
+                </div>
+                <div className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4">
+                  {songs.filter(s => s.isReel).map((reel, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => setActiveTab('reels')}
+                      className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
+                    >
+                      <img 
+                        src={reel.cover} 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                        referrerPolicy="no-referrer" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-2">
+                        <div className="flex items-center gap-1 mb-1">
+                          <Clapperboard size={12} className="text-white" />
+                          <span className="text-[10px] font-bold text-white truncate">{reel.artist}</span>
+                        </div>
+                        <h3 className="text-[10px] text-white/80 line-clamp-1">{reel.title}</h3>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Albums featuring songs you like */}
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Albums featuring songs you like</h2>
@@ -781,57 +821,96 @@ export default function App() {
             )}
           </div>
         ) : activeTab === 'reels' ? (
-          <div className="h-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide">
+          <div 
+            ref={reelsContainerRef}
+            className="h-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
+            onWheel={(e) => {
+              if (reelsContainerRef.current) {
+                const container = reelsContainerRef.current;
+                if (e.deltaY > 0) {
+                  container.scrollBy({ top: container.clientHeight, behavior: 'smooth' });
+                } else {
+                  container.scrollBy({ top: -container.clientHeight, behavior: 'smooth' });
+                }
+              }
+            }}
+          >
             {songs.filter(s => s.isReel).length > 0 ? (
               songs.filter(s => s.isReel).map((reel, index) => (
                 <div key={reel.id} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
-                  <video 
-                    src={reel.url} 
-                    className="h-full w-full object-cover aspect-[9/16]" 
-                    loop 
-                    muted={false}
-                    autoPlay={index === 0}
-                    playsInline
-                    onClick={(e) => {
-                      const video = e.currentTarget;
-                      if (video.paused) video.play();
-                      else video.pause();
-                    }}
-                  />
-                  
-                  {/* Overlay Info */}
-                  <div className="absolute bottom-24 left-4 right-16 z-10">
-                    <h3 className="text-lg font-bold text-white drop-shadow-lg">{reel.title}</h3>
-                    <p className="text-sm text-white/80 drop-shadow-md">{reel.artist}</p>
+                  <div className="relative h-full w-full max-w-[calc(100vh*9/16)] aspect-[9/16] bg-zinc-900 shadow-2xl">
+                    <video 
+                      src={reel.url} 
+                      className="h-full w-full object-cover" 
+                      loop 
+                      muted={false}
+                      autoPlay={index === 0}
+                      playsInline
+                      onClick={(e) => {
+                        const video = e.currentTarget;
+                        if (video.paused) video.play();
+                        else video.pause();
+                      }}
+                    />
+                    
+                    {/* Overlay Info */}
+                    <div className="absolute bottom-24 left-4 right-16 z-10">
+                      <h3 className="text-lg font-bold text-white drop-shadow-lg">{reel.title}</h3>
+                      <p className="text-sm text-white/80 drop-shadow-md">{reel.artist}</p>
+                    </div>
+
+                    {/* Side Actions */}
+                    <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleLike(reel.id); }}
+                        className="flex flex-col items-center gap-1"
+                      >
+                        <Heart 
+                          size={32} 
+                          className={`${likedSongIds.includes(reel.id) ? 'fill-spotify-green text-spotify-green' : 'text-white'} drop-shadow-lg`} 
+                        />
+                        <span className="text-[10px] font-bold text-white">Like</span>
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (navigator.share) {
+                            navigator.share({
+                              title: reel.title,
+                              text: `Check out this reel by ${reel.artist}`,
+                              url: window.location.href
+                            });
+                          }
+                        }}
+                        className="flex flex-col items-center gap-1"
+                      >
+                        <Share2 size={32} className="text-white drop-shadow-lg" />
+                        <span className="text-[10px] font-bold text-white">Share</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Side Actions */}
-                  <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                  {/* Desktop Navigation Arrows */}
+                  <div className="hidden lg:flex absolute right-10 top-1/2 -translate-y-1/2 flex-col gap-4 z-20">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); toggleLike(reel.id); }}
-                      className="flex flex-col items-center gap-1"
-                    >
-                      <Heart 
-                        size={32} 
-                        className={`${likedSongIds.includes(reel.id) ? 'fill-spotify-green text-spotify-green' : 'text-white'} drop-shadow-lg`} 
-                      />
-                      <span className="text-[10px] font-bold text-white">Like</span>
-                    </button>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (navigator.share) {
-                          navigator.share({
-                            title: reel.title,
-                            text: `Check out this reel by ${reel.artist}`,
-                            url: window.location.href
-                          });
+                      onClick={() => {
+                        if (reelsContainerRef.current) {
+                          reelsContainerRef.current.scrollBy({ top: -reelsContainerRef.current.clientHeight, behavior: 'smooth' });
                         }
                       }}
-                      className="flex flex-col items-center gap-1"
+                      className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
                     >
-                      <Share2 size={32} className="text-white drop-shadow-lg" />
-                      <span className="text-[10px] font-bold text-white">Share</span>
+                      <ChevronUp size={32} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (reelsContainerRef.current) {
+                          reelsContainerRef.current.scrollBy({ top: reelsContainerRef.current.clientHeight, behavior: 'smooth' });
+                        }
+                      }}
+                      className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                    >
+                      <ChevronDown size={32} />
                     </button>
                   </div>
                 </div>
