@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -168,13 +168,14 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [hasHandledDeepLink, setHasHandledDeepLink] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
   const [isReelsMuted, setIsReelsMuted] = useState(false);
   const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
   const [selectedReelId, setSelectedReelId] = useState<number | null>(null);
   const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyric[]>([]);
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+
+  const reelSongs = useMemo(() => songs.filter(s => s.isReel), [songs]);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -262,6 +263,11 @@ export default function App() {
             const video = entry.target as HTMLVideoElement;
             if (entry.isIntersecting) {
               video.play().catch(err => console.log("Auto-play blocked:", err));
+              // Update selectedReelId when it becomes visible
+              const reelId = Object.keys(videoRefs.current).find(key => videoRefs.current[key] === video);
+              if (reelId) {
+                setSelectedReelId(Number(reelId));
+              }
             } else {
               video.pause();
             }
@@ -272,13 +278,18 @@ export default function App() {
 
       const currentVideos = videoRefs.current;
       Object.values(currentVideos).forEach((video) => {
-        if (video instanceof HTMLVideoElement) observer.observe(video);
+        if (video instanceof HTMLVideoElement) {
+          observer.observe(video);
+        }
       });
 
       return () => {
         Object.values(currentVideos).forEach((video) => {
-          if (video instanceof HTMLVideoElement) observer.unobserve(video);
+          if (video instanceof HTMLVideoElement) {
+            observer.unobserve(video);
+          }
         });
+        observer.disconnect();
       };
     }
   }, [activeTab, songs]);
@@ -984,7 +995,7 @@ export default function App() {
             </section>
 
             {/* Reels on Home */}
-            {(loading || songs.filter(s => s.isReel).length > 0) && (
+            {(loading || reelSongs.length > 0) && (
               <section className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
@@ -1001,7 +1012,7 @@ export default function App() {
                       <Skeleton key={i} className="min-w-[120px] max-w-[120px] aspect-[9/16] shrink-0" />
                     ))
                   ) : (
-                    songs.filter(s => s.isReel).map((reel, i) => (
+                    reelSongs.map((reel, i) => (
                       <div 
                         key={i} 
                         onClick={() => {
@@ -1172,28 +1183,6 @@ export default function App() {
           <div 
             ref={reelsContainerRef}
             className="h-full w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
-            onScroll={(e) => {
-              const container = e.currentTarget;
-              const index = Math.round(container.scrollTop / container.clientHeight);
-              const reelSongs = songs.filter(s => s.isReel);
-              if (reelSongs[index] && selectedReelId !== reelSongs[index].id) {
-                setSelectedReelId(reelSongs[index].id);
-              }
-            }}
-            onWheel={(e) => {
-              if (reelsContainerRef.current && !isScrolling) {
-                const container = reelsContainerRef.current;
-                if (Math.abs(e.deltaY) > 20) { // Threshold
-                  setIsScrolling(true);
-                  if (e.deltaY > 0) {
-                    container.scrollBy({ top: container.clientHeight, behavior: 'smooth' });
-                  } else {
-                    container.scrollBy({ top: -container.clientHeight, behavior: 'smooth' });
-                  }
-                  setTimeout(() => setIsScrolling(false), 800); // Throttle for 800ms
-                }
-              }
-            }}
           >
             {loading ? (
               // Reels Skeleton
@@ -1212,8 +1201,8 @@ export default function App() {
                   </div>
                 </div>
               ))
-            ) : songs.filter(s => s.isReel).length > 0 ? (
-              songs.filter(s => s.isReel).map((reel, index) => (
+            ) : reelSongs.length > 0 ? (
+              reelSongs.map((reel, index) => (
                 <div 
                   key={reel.id} 
                   id={`reel-${reel.id}`}
