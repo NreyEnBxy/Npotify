@@ -25,7 +25,9 @@ import {
   Download,
   Camera,
   X,
-  AlertCircle
+  AlertCircle,
+  Clapperboard,
+  Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -78,6 +80,7 @@ interface Song {
   artist: string;
   cover: string;
   url: string;
+  isReel?: boolean;
 }
 
 interface User {
@@ -96,7 +99,7 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'premium' | 'library'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'reels' | 'premium' | 'library'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -300,6 +303,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (activeTab === 'reels' && isPlaying) {
+      setIsPlaying(false);
+      audioRef.current?.pause();
+    }
+  }, [activeTab, isPlaying]);
+
+  useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
     return () => clearTimeout(timer);
   }, []);
@@ -326,13 +336,17 @@ export default function App() {
         const response = await fetch(url);
         const text = await response.text();
         const json = JSON.parse(text.substring(47, text.length - 2));
-        const fetchedSongs: Song[] = json.table.rows.map((row: any, index: number) => ({
-          id: index,
-          title: row.c[0]?.v || "Unknown Title",
-          artist: row.c[1]?.v || "Unknown Artist",
-          cover: row.c[2]?.v || "https://picsum.photos/seed/music/400/400",
-          url: formatAudioUrl(row.c[3]?.v || "")
-        })).filter((s: Song) => s.url !== "");
+        const fetchedSongs: Song[] = json.table.rows.map((row: any, index: number) => {
+          const title = row.c[0]?.v || "Unknown Title";
+          return {
+            id: index,
+            title: title,
+            artist: row.c[1]?.v || "Unknown Artist",
+            cover: row.c[2]?.v || "https://picsum.photos/seed/music/400/400",
+            url: formatAudioUrl(row.c[3]?.v || ""),
+            isReel: title.includes('#')
+          };
+        }).filter((s: Song) => s.url !== "");
         setSongs(fetchedSongs);
         setLoading(false);
       } catch (error) {
@@ -396,28 +410,40 @@ export default function App() {
 
   const nextSong = () => {
     if (currentSongIndex !== null) {
+      const mainSongs = songs.filter(s => !s.isReel);
+      if (mainSongs.length === 0) return;
+      
+      const currentMainIndex = mainSongs.findIndex(s => s.id === currentSongIndex);
+      
       if (isShuffle) {
         let nextIndex;
         do {
-          nextIndex = Math.floor(Math.random() * songs.length);
-        } while (nextIndex === currentSongIndex && songs.length > 1);
-        setCurrentSongIndex(nextIndex);
+          nextIndex = Math.floor(Math.random() * mainSongs.length);
+        } while (mainSongs[nextIndex].id === currentSongIndex && mainSongs.length > 1);
+        setCurrentSongIndex(mainSongs[nextIndex].id);
       } else {
-        setCurrentSongIndex((currentSongIndex + 1) % songs.length);
+        const nextMainIndex = currentMainIndex === -1 ? 0 : (currentMainIndex + 1) % mainSongs.length;
+        setCurrentSongIndex(mainSongs[nextMainIndex].id);
       }
     }
   };
 
   const prevSong = () => {
     if (currentSongIndex !== null) {
+      const mainSongs = songs.filter(s => !s.isReel);
+      if (mainSongs.length === 0) return;
+      
+      const currentMainIndex = mainSongs.findIndex(s => s.id === currentSongIndex);
+      
       if (isShuffle) {
         let prevIndex;
         do {
-          prevIndex = Math.floor(Math.random() * songs.length);
-        } while (prevIndex === currentSongIndex && songs.length > 1);
-        setCurrentSongIndex(prevIndex);
+          prevIndex = Math.floor(Math.random() * mainSongs.length);
+        } while (mainSongs[prevIndex].id === currentSongIndex && mainSongs.length > 1);
+        setCurrentSongIndex(mainSongs[prevIndex].id);
       } else {
-        setCurrentSongIndex((currentSongIndex - 1 + songs.length) % songs.length);
+        const prevMainIndex = currentMainIndex === -1 ? 0 : (currentMainIndex - 1 + mainSongs.length) % mainSongs.length;
+        setCurrentSongIndex(mainSongs[prevMainIndex].id);
       }
     }
   };
@@ -604,10 +630,10 @@ export default function App() {
 
             {/* Recent Grid */}
             <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4 mb-8">
-              {songs.slice(0, 8).map((song, i) => (
+              {songs.filter(s => !s.isReel).slice(0, 8).map((song, i) => (
                 <div 
                   key={i} 
-                  onClick={() => playSong(i)}
+                  onClick={() => playSong(song.id)}
                   className="bg-white/10 hover:bg-white/20 transition-colors rounded flex items-center gap-2 overflow-hidden group cursor-pointer h-14"
                 >
                   <img 
@@ -624,8 +650,8 @@ export default function App() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Jump back in</h2>
               <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
-                {songs.map((song, i) => (
-                  <div key={i} onClick={() => playSong(i)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
+                {songs.filter(s => !s.isReel).map((song, i) => (
+                  <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
                     <div className="relative aspect-square mb-3">
                       <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
                       {i % 3 === 0 && (
@@ -636,7 +662,7 @@ export default function App() {
                     </div>
                     <h3 className="font-bold text-sm truncate">{song.title}</h3>
                     <p className="text-spotify-gray text-xs mt-1 line-clamp-2 leading-tight">
-                      Playlist • {song.artist}, {songs[(i+1)%songs.length].artist}
+                      Playlist • {song.artist}
                     </p>
                   </div>
                 ))}
@@ -647,8 +673,8 @@ export default function App() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Albums featuring songs you like</h2>
               <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
-                {songs.slice().reverse().map((song, i) => (
-                  <div key={i} onClick={() => playSong(songs.length - 1 - i)} className="min-w-[160px] max-w-[160px] cursor-pointer">
+                {songs.filter(s => !s.isReel).slice().reverse().map((song, i) => (
+                  <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer">
                     <div className="relative aspect-square mb-3">
                       <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
                     </div>
@@ -754,6 +780,70 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : activeTab === 'reels' ? (
+          <div className="h-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide">
+            {songs.filter(s => s.isReel).length > 0 ? (
+              songs.filter(s => s.isReel).map((reel, index) => (
+                <div key={reel.id} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
+                  <video 
+                    src={reel.url} 
+                    className="h-full w-full object-cover aspect-[9/16]" 
+                    loop 
+                    muted={false}
+                    autoPlay={index === 0}
+                    playsInline
+                    onClick={(e) => {
+                      const video = e.currentTarget;
+                      if (video.paused) video.play();
+                      else video.pause();
+                    }}
+                  />
+                  
+                  {/* Overlay Info */}
+                  <div className="absolute bottom-24 left-4 right-16 z-10">
+                    <h3 className="text-lg font-bold text-white drop-shadow-lg">{reel.title}</h3>
+                    <p className="text-sm text-white/80 drop-shadow-md">{reel.artist}</p>
+                  </div>
+
+                  {/* Side Actions */}
+                  <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); toggleLike(reel.id); }}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <Heart 
+                        size={32} 
+                        className={`${likedSongIds.includes(reel.id) ? 'fill-spotify-green text-spotify-green' : 'text-white'} drop-shadow-lg`} 
+                      />
+                      <span className="text-[10px] font-bold text-white">Like</span>
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (navigator.share) {
+                          navigator.share({
+                            title: reel.title,
+                            text: `Check out this reel by ${reel.artist}`,
+                            url: window.location.href
+                          });
+                        }
+                      }}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <Share2 size={32} className="text-white drop-shadow-lg" />
+                      <span className="text-[10px] font-bold text-white">Share</span>
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center p-4 text-center">
+                <Clapperboard size={64} className="text-spotify-gray mb-4" />
+                <h2 className="text-2xl font-bold mb-2">No Reels yet</h2>
+                <p className="text-spotify-gray">Add songs with # in the title to see them here.</p>
+              </div>
+            )}
+          </div>
         ) : activeTab === 'library' ? (
           <div className="p-4 pt-6">
             <div className="flex items-center justify-between mb-6">
@@ -803,43 +893,83 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 mb-6 bg-gradient-to-br from-[#450af5] to-[#c4efd9] p-4 rounded-lg">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center rounded shadow-lg">
-                    <Heart size={24} className="fill-white text-white" />
+              <div className="space-y-8">
+                {/* Liked Songs */}
+                <div>
+                  <div className="flex items-center gap-4 mb-6 bg-gradient-to-br from-[#450af5] to-[#c4efd9] p-4 rounded-lg">
+                    <div className="w-12 h-12 bg-gradient-to-br from-[#450af5] to-[#8e8ee5] flex items-center justify-center rounded shadow-lg">
+                      <Heart size={24} className="fill-white text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-lg">Liked Songs</h3>
+                      <p className="text-sm opacity-80">{songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length} songs</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg">Liked Songs</h3>
-                    <p className="text-sm opacity-80">{likedSongIds.length} songs</p>
+
+                  <div className="space-y-4">
+                    {songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
+                      songs.filter(s => !s.isReel && likedSongIds.includes(s.id)).map((song) => (
+                        <div 
+                          key={song.id} 
+                          onClick={() => playSong(song.id)}
+                          className="flex items-center gap-3 cursor-pointer group"
+                        >
+                          <img src={song.cover} className="w-12 h-12 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className={`text-sm font-medium truncate ${currentSongIndex === song.id ? 'text-spotify-green' : 'text-white'}`}>
+                              {song.title}
+                            </span>
+                            <span className="text-xs text-spotify-gray truncate">{song.artist}</span>
+                          </div>
+                          <Heart 
+                            size={18} 
+                            className="text-spotify-green fill-current" 
+                            onClick={(e) => { e.stopPropagation(); toggleLike(song.id); }}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-spotify-gray text-sm text-center py-4">No liked songs yet.</p>
+                    )}
                   </div>
                 </div>
 
-                {likedSongIds.length > 0 ? (
-                  songs.filter(s => likedSongIds.includes(s.id)).map((song) => (
-                    <div 
-                      key={song.id} 
-                      onClick={() => playSong(song.id)}
-                      className="flex items-center gap-3 cursor-pointer group"
-                    >
-                      <img src={song.cover} className="w-12 h-12 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className={`text-sm font-medium truncate ${currentSongIndex === song.id ? 'text-spotify-green' : 'text-white'}`}>
-                          {song.title}
-                        </span>
-                        <span className="text-xs text-spotify-gray truncate">{song.artist}</span>
-                      </div>
-                      <Heart 
-                        size={18} 
-                        className="text-spotify-green fill-current" 
-                        onClick={(e) => { e.stopPropagation(); toggleLike(song.id); }}
-                      />
+                {/* Liked Reels */}
+                <div>
+                  <div className="flex items-center gap-4 mb-6 bg-gradient-to-br from-[#058c42] to-[#0d47a1] p-4 rounded-lg">
+                    <div className="w-12 h-12 bg-gradient-to-br from-[#058c42] to-[#0a6b32] flex items-center justify-center rounded shadow-lg">
+                      <Clapperboard size={24} className="text-white" />
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-20">
-                    <p className="text-spotify-gray">You haven't liked any songs yet.</p>
+                    <div>
+                      <h3 className="font-bold text-lg">Liked Reels</h3>
+                      <p className="text-sm opacity-80">{songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length} reels</p>
+                    </div>
                   </div>
-                )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {songs.filter(s => s.isReel && likedSongIds.includes(s.id)).length > 0 ? (
+                      songs.filter(s => s.isReel && likedSongIds.includes(s.id)).map((reel) => (
+                        <div 
+                          key={reel.id} 
+                          onClick={() => {
+                            setActiveTab('reels');
+                            // Scroll to this reel logic could be added here
+                          }}
+                          className="aspect-[9/16] relative rounded-md overflow-hidden cursor-pointer group"
+                        >
+                          <img src={reel.cover} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-end p-2">
+                            <span className="text-[10px] font-bold text-white truncate">{reel.title}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="col-span-3 text-center py-4">
+                        <p className="text-spotify-gray text-sm">No liked reels yet.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1382,6 +1512,16 @@ export default function App() {
               strokeWidth={activeTab === 'search' ? 3 : 2}
             />
             <span className={`text-[10px] ${activeTab === 'search' ? 'font-bold' : 'font-medium'}`}>Search</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('reels')}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'reels' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+          >
+            <Clapperboard 
+              size={24} 
+              strokeWidth={activeTab === 'reels' ? 3 : 2}
+            />
+            <span className={`text-[10px] ${activeTab === 'reels' ? 'font-bold' : 'font-medium'}`}>Reels</span>
           </button>
           <button 
             onClick={() => setActiveTab('premium')}
