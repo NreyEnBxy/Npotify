@@ -13,7 +13,6 @@ import {
   Loader2,
   CheckCircle2,
   Smartphone,
-  ChevronDown,
   SkipBack,
   SkipForward,
   MoreHorizontal,
@@ -109,6 +108,7 @@ export default function App() {
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -127,6 +127,36 @@ export default function App() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reelsContainerRef = useRef<HTMLDivElement | null>(null);
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+
+  useEffect(() => {
+    if (activeTab === 'reels') {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            const video = entry.target as HTMLVideoElement;
+            if (entry.isIntersecting) {
+              video.play().catch(err => console.log("Auto-play blocked:", err));
+            } else {
+              video.pause();
+            }
+          });
+        },
+        { threshold: 0.6 }
+      );
+
+      const currentVideos = videoRefs.current;
+      Object.values(currentVideos).forEach((video) => {
+        if (video instanceof HTMLVideoElement) observer.observe(video);
+      });
+
+      return () => {
+        Object.values(currentVideos).forEach((video) => {
+          if (video instanceof HTMLVideoElement) observer.unobserve(video);
+        });
+      };
+    }
+  }, [activeTab, songs]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -579,7 +609,11 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Scrollable Area */}
-      <main className={`flex-1 ${activeTab === 'premium' && showPremiumFrame ? 'overflow-hidden' : 'overflow-y-auto pb-40'} scrollbar-hide`}>
+      <main className={`flex-1 h-full relative ${
+        (activeTab === 'premium' && showPremiumFrame) || activeTab === 'reels' 
+          ? 'overflow-hidden' 
+          : 'overflow-y-auto pb-40'
+      } scrollbar-hide`}>
         {activeTab === 'home' ? (
           <div className="p-4 pt-6">
             {/* Top Bar */}
@@ -823,14 +857,18 @@ export default function App() {
         ) : activeTab === 'reels' ? (
           <div 
             ref={reelsContainerRef}
-            className="h-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
+            className="h-full w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
             onWheel={(e) => {
-              if (reelsContainerRef.current) {
+              if (reelsContainerRef.current && !isScrolling) {
                 const container = reelsContainerRef.current;
-                if (e.deltaY > 0) {
-                  container.scrollBy({ top: container.clientHeight, behavior: 'smooth' });
-                } else {
-                  container.scrollBy({ top: -container.clientHeight, behavior: 'smooth' });
+                if (Math.abs(e.deltaY) > 20) { // Threshold
+                  setIsScrolling(true);
+                  if (e.deltaY > 0) {
+                    container.scrollBy({ top: container.clientHeight, behavior: 'smooth' });
+                  } else {
+                    container.scrollBy({ top: -container.clientHeight, behavior: 'smooth' });
+                  }
+                  setTimeout(() => setIsScrolling(false), 800); // Throttle for 800ms
                 }
               }
             }}
@@ -838,38 +876,50 @@ export default function App() {
             {songs.filter(s => s.isReel).length > 0 ? (
               songs.filter(s => s.isReel).map((reel, index) => (
                 <div key={reel.id} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
-                  <div className="relative h-full w-full max-w-[calc(100vh*9/16)] aspect-[9/16] bg-zinc-900 shadow-2xl">
+                  <div 
+                    className="relative h-full w-full max-w-[calc(100vh*9/16)] bg-zinc-900 shadow-2xl flex items-center justify-center overflow-hidden"
+                    style={{ aspectRatio: '9/16' }}
+                  >
                     <video 
+                      ref={el => videoRefs.current[reel.id] = el}
                       src={reel.url} 
                       className="h-full w-full object-cover" 
                       loop 
-                      muted={false}
-                      autoPlay={index === 0}
+                      muted
                       playsInline
+                      webkit-playsinline="true"
                       onClick={(e) => {
                         const video = e.currentTarget;
-                        if (video.paused) video.play();
-                        else video.pause();
+                        if (video.paused) {
+                          video.play().catch(err => console.error("Play failed:", err));
+                        } else {
+                          video.pause();
+                        }
                       }}
                     />
                     
                     {/* Overlay Info */}
-                    <div className="absolute bottom-24 left-4 right-16 z-10">
-                      <h3 className="text-lg font-bold text-white drop-shadow-lg">{reel.title}</h3>
-                      <p className="text-sm text-white/80 drop-shadow-md">{reel.artist}</p>
+                    <div className="absolute bottom-24 left-4 right-16 z-10 pointer-events-none">
+                      <h3 className="text-lg font-bold text-white drop-shadow-lg mb-1">{reel.title}</h3>
+                      <p className="text-sm text-white/80 drop-shadow-md flex items-center gap-2">
+                        <Music size={14} />
+                        {reel.artist}
+                      </p>
                     </div>
 
                     {/* Side Actions */}
                     <div className="absolute bottom-28 right-4 flex flex-col gap-6 items-center z-10">
                       <button 
                         onClick={(e) => { e.stopPropagation(); toggleLike(reel.id); }}
-                        className="flex flex-col items-center gap-1"
+                        className="flex flex-col items-center gap-1 group"
                       >
-                        <Heart 
-                          size={32} 
-                          className={`${likedSongIds.includes(reel.id) ? 'fill-spotify-green text-spotify-green' : 'text-white'} drop-shadow-lg`} 
-                        />
-                        <span className="text-[10px] font-bold text-white">Like</span>
+                        <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm group-hover:bg-black/40 transition-colors">
+                          <Heart 
+                            size={28} 
+                            className={`${likedSongIds.includes(reel.id) ? 'fill-spotify-green text-spotify-green' : 'text-white'} drop-shadow-lg transition-transform active:scale-125`} 
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold text-white drop-shadow-md">Like</span>
                       </button>
                       <button 
                         onClick={(e) => {
@@ -882,25 +932,28 @@ export default function App() {
                             });
                           }
                         }}
-                        className="flex flex-col items-center gap-1"
+                        className="flex flex-col items-center gap-1 group"
                       >
-                        <Share2 size={32} className="text-white drop-shadow-lg" />
-                        <span className="text-[10px] font-bold text-white">Share</span>
+                        <div className="p-2 rounded-full bg-black/20 backdrop-blur-sm group-hover:bg-black/40 transition-colors">
+                          <Share2 size={28} className="text-white drop-shadow-lg" />
+                        </div>
+                        <span className="text-[10px] font-bold text-white drop-shadow-md">Share</span>
                       </button>
                     </div>
                   </div>
 
                   {/* Desktop Navigation Arrows */}
-                  <div className="hidden lg:flex absolute right-10 top-1/2 -translate-y-1/2 flex-col gap-4 z-20">
+                  <div className="hidden lg:flex absolute right-8 top-1/2 -translate-y-1/2 flex-col gap-6 z-20">
                     <button 
                       onClick={() => {
                         if (reelsContainerRef.current) {
                           reelsContainerRef.current.scrollBy({ top: -reelsContainerRef.current.clientHeight, behavior: 'smooth' });
                         }
                       }}
-                      className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                      className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white transition-all hover:scale-110 shadow-2xl border border-white/10"
+                      title="Previous Reel"
                     >
-                      <ChevronUp size={32} />
+                      <ChevronUp size={28} />
                     </button>
                     <button 
                       onClick={() => {
@@ -908,9 +961,10 @@ export default function App() {
                           reelsContainerRef.current.scrollBy({ top: reelsContainerRef.current.clientHeight, behavior: 'smooth' });
                         }
                       }}
-                      className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                      className="p-4 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white transition-all hover:scale-110 shadow-2xl border border-white/10"
+                      title="Next Reel"
                     >
-                      <ChevronDown size={32} />
+                      <ChevronDown size={28} />
                     </button>
                   </div>
                 </div>
