@@ -471,7 +471,7 @@ export default function App() {
       try {
         await navigator.share({
           title: item.title,
-          text: `Check out ${item.title} by ${item.artist} on Spotify Clone!`,
+          text: `Check out ${item.title} by ${item.artist} on Npotify!`,
           url: shareUrl,
         });
       } catch (error: any) {
@@ -1497,7 +1497,7 @@ export default function App() {
                   </div>
                 </div>
                 <Music size={60} className="mx-auto mb-4 text-spotify-green lg:w-24 lg:h-24" />
-                <h2 className="text-2xl font-bold mb-2 lg:text-4xl">Spotify Premium</h2>
+                <h2 className="text-2xl font-bold mb-2 lg:text-4xl">Npotify Premium</h2>
                 <p className="text-spotify-gray mb-6 lg:text-xl lg:max-w-md lg:mx-auto">Apni amader donation korle ei taka Tula-chashi der kache jabe</p>
                 <button 
                   onClick={() => setShowPremiumFrame(true)}
