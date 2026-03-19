@@ -198,6 +198,7 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reelsContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const lastPlayedIndex = useRef<number | null>(null);
 
   // Handle URL sub-pages and back button
   useEffect(() => {
@@ -247,7 +248,7 @@ export default function App() {
     if (!hasHandledDeepLink) {
       setHasHandledDeepLink(true);
     }
-  }, [location.pathname, location.search, loading, songs, currentSongIndex, selectedReelId, hasHandledDeepLink]);
+  }, [location.pathname, location.search, loading, songs, hasHandledDeepLink]);
 
   useEffect(() => {
     if (!hasHandledDeepLink || loading) return;
@@ -274,10 +275,14 @@ export default function App() {
     const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
     
     if (location.pathname + location.search !== targetUrl) {
-      // If the path itself changed (e.g. home -> player), add to history
-      // If only parameters changed (e.g. song1 -> song2), replace history
       const isPathChange = location.pathname !== `/${targetPath}`;
-      navigate(targetUrl, { replace: !isPathChange });
+      const isOpeningSubPage = (targetPath === 'player' || targetPath === 'account') && location.pathname !== `/${targetPath}`;
+      const isClosingSubPage = (location.pathname === '/player' || location.pathname === '/account') && targetPath !== location.pathname.replace('/', '');
+      
+      // Use replace when closing a sub-page or when only parameters changed
+      const shouldReplace = isClosingSubPage || !isPathChange;
+      
+      navigate(targetUrl, { replace: shouldReplace });
     }
   }, [activeTab, isPlayerExpanded, showAccountSettings, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, hasHandledDeepLink, loading, songs]);
 
@@ -644,33 +649,34 @@ export default function App() {
   useEffect(() => {
     const audio = audioRef.current;
     if (currentSongIndex !== null && audio && songs[currentSongIndex]) {
-      const newSrc = songs[currentSongIndex].url;
+      const song = songs[currentSongIndex];
+      const newSrc = song.url;
       
-      // Only update src if it's different to prevent interrupting current load
-      if (audio.src !== newSrc) {
+      const isNewSong = lastPlayedIndex.current !== currentSongIndex;
+      const isNewUrl = audio.src !== newSrc;
+      
+      // Only update src and play if it's actually a different song or URL
+      if (isNewSong || isNewUrl) {
         audio.src = newSrc;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            if (error.name !== 'AbortError') {
+              console.error("Playback failed:", error);
+            }
+          });
+        }
+        setIsPlaying(true);
+        lastPlayedIndex.current = currentSongIndex;
       }
       
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          // Ignore AbortError caused by rapid navigation/interruption
-          if (error.name !== 'AbortError') {
-            console.error("Playback failed:", error);
-          }
-        });
-      }
-      setIsPlaying(true);
-      if (songs[currentSongIndex].lyrics) {
-        const parsed = parseLyrics(songs[currentSongIndex].lyrics!);
+      // Update lyrics independently of playback state to avoid stutters
+      if (song.lyrics) {
+        const parsed = parseLyrics(song.lyrics);
         setSyncedLyrics(parsed);
-        // If lyrics exist but aren't synced, try to fetch synced ones automatically
-        if (parsed.length === 0) {
-          syncLyrics();
-        }
+        if (parsed.length === 0) syncLyrics();
       } else {
         setSyncedLyrics([]);
-        // Automatically try to fetch lyrics if missing
         syncLyrics();
       }
     }
