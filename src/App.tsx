@@ -201,7 +201,12 @@ export default function App() {
 
   // Handle URL sub-pages and back button
   useEffect(() => {
+    if (loading || songs.length === 0) return;
+
     const path = location.pathname.replace('/', '');
+    const params = new URLSearchParams(location.search);
+    const songId = params.get('songId');
+    const reelId = params.get('reelId');
     
     // Handle Account Settings
     if (path === 'account') {
@@ -210,6 +215,14 @@ export default function App() {
     } else if (path === 'player') {
       setIsPlayerExpanded(true);
       setShowAccountSettings(false);
+      
+      if (songId) {
+        const id = parseInt(songId);
+        const songIndex = songs.findIndex(s => s.id === id);
+        if (songIndex !== -1 && songIndex !== currentSongIndex) {
+          playSong(songIndex);
+        }
+      }
     } else {
       setShowAccountSettings(false);
       setIsPlayerExpanded(false);
@@ -217,11 +230,24 @@ export default function App() {
       const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
       if (validTabs.includes(path)) {
         setActiveTab(path as any);
+        
+        if (path === 'reels' && reelId) {
+          const id = parseInt(reelId);
+          if (id !== selectedReelId) {
+            setSelectedReelId(id);
+            setReelScrollTarget(id);
+          }
+        }
       } else if (path === '') {
         setActiveTab('home');
       }
     }
-  }, [location.pathname]);
+
+    // Mark deep link as handled once we've processed the initial URL
+    if (!hasHandledDeepLink) {
+      setHasHandledDeepLink(true);
+    }
+  }, [location.pathname, location.search, loading, songs, currentSongIndex, selectedReelId, hasHandledDeepLink]);
 
   useEffect(() => {
     if (!hasHandledDeepLink || loading) return;
@@ -235,32 +261,25 @@ export default function App() {
     }
 
     const newParams = new URLSearchParams();
-    if (currentSongIndex !== null && songs[currentSongIndex]) {
+    // Only include songId if player is expanded
+    if (isPlayerExpanded && currentSongIndex !== null && songs[currentSongIndex]) {
       newParams.set('songId', songs[currentSongIndex].id.toString());
     }
     
+    // Only include reelId if on reels tab
     if (activeTab === 'reels' && selectedReelId !== null) {
       newParams.set('reelId', selectedReelId.toString());
     }
 
     const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
     
-    // If we have a songId or reelId in the current URL but not in our targetUrl,
-    // and we just handled the deep link, it might be a race condition.
-    // We should avoid navigating if the current URL has the parameters we're looking for.
-    const currentSongId = searchParams.get('songId');
-    const currentReelId = searchParams.get('reelId');
-    
-    if (currentSongId && currentSongIndex === null) return;
-    if (currentReelId && selectedReelId === null) return;
-
     if (location.pathname + location.search !== targetUrl) {
       // If the path itself changed (e.g. home -> player), add to history
       // If only parameters changed (e.g. song1 -> song2), replace history
       const isPathChange = location.pathname !== `/${targetPath}`;
       navigate(targetUrl, { replace: !isPathChange });
     }
-  }, [activeTab, isPlayerExpanded, showAccountSettings, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, hasHandledDeepLink, loading, searchParams, songs]);
+  }, [activeTab, isPlayerExpanded, showAccountSettings, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, hasHandledDeepLink, loading, songs]);
 
   useEffect(() => {
     if (showAccountSettings && currentUser) {
@@ -546,39 +565,7 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    // Wait for songs to load
-    if (loading || songs.length === 0 || hasHandledDeepLink) return;
-
-    const params = new URLSearchParams(window.location.search);
-    const songId = params.get('songId');
-    const reelId = params.get('reelId');
-
-    if (songId) {
-      const id = parseInt(songId);
-      const songIndex = songs.findIndex(s => s.id === id);
-      if (songIndex !== -1) {
-        playSong(songIndex);
-        setIsPlayerExpanded(true);
-        setHasHandledDeepLink(true);
-        return;
-      }
-    } 
-    
-    if (reelId) {
-      const id = parseInt(reelId);
-      const reel = songs.find(s => s.id === id && s.isReel);
-      if (reel) {
-        setActiveTab('reels');
-        setSelectedReelId(id);
-        setReelScrollTarget(id);
-        setHasHandledDeepLink(true);
-        return;
-      }
-    }
-
-    setHasHandledDeepLink(true);
-  }, [loading, songs, hasHandledDeepLink]);
+  // Initial deep link handling is now merged into the location listener
 
   useEffect(() => {
     // Only pause if we are NOT in the middle of handling a deep link for a reel
