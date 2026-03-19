@@ -184,7 +184,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [likedSongIds, setLikedSongIds] = useState<number[]>([]);
-  const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [showAccountSettings, setShowAccountSettings] = useState(() => {
+    return window.location.pathname.replace('/', '') === 'account';
+  });
   const [accountForm, setAccountForm] = useState({ name: '', password: '', profilePic: '' });
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -201,15 +203,18 @@ export default function App() {
   useEffect(() => {
     const path = location.pathname.replace('/', '');
     
-    // Handle Player Expansion
-    if (path === 'player') {
-      setIsPlayerExpanded(true);
-    } else {
+    // Handle Account Settings
+    if (path === 'account') {
+      setShowAccountSettings(true);
       setIsPlayerExpanded(false);
-    }
-
-    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
-    if (path !== 'player') {
+    } else if (path === 'player') {
+      setIsPlayerExpanded(true);
+      setShowAccountSettings(false);
+    } else {
+      setShowAccountSettings(false);
+      setIsPlayerExpanded(false);
+      
+      const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
       if (validTabs.includes(path)) {
         setActiveTab(path as any);
       } else if (path === '') {
@@ -219,15 +224,19 @@ export default function App() {
   }, [location.pathname]);
 
   useEffect(() => {
+    if (!hasHandledDeepLink || loading) return;
+
     let targetPath = activeTab === 'home' ? '' : activeTab;
     
-    if (isPlayerExpanded) {
+    if (showAccountSettings) {
+      targetPath = 'account';
+    } else if (isPlayerExpanded) {
       targetPath = 'player';
     }
 
     const newParams = new URLSearchParams();
-    if (currentSongIndex !== null) {
-      newParams.set('songId', currentSongIndex.toString());
+    if (currentSongIndex !== null && songs[currentSongIndex]) {
+      newParams.set('songId', songs[currentSongIndex].id.toString());
     }
     
     if (activeTab === 'reels' && selectedReelId !== null) {
@@ -236,10 +245,32 @@ export default function App() {
 
     const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
     
+    // If we have a songId or reelId in the current URL but not in our targetUrl,
+    // and we just handled the deep link, it might be a race condition.
+    // We should avoid navigating if the current URL has the parameters we're looking for.
+    const currentSongId = searchParams.get('songId');
+    const currentReelId = searchParams.get('reelId');
+    
+    if (currentSongId && currentSongIndex === null) return;
+    if (currentReelId && selectedReelId === null) return;
+
     if (location.pathname + location.search !== targetUrl) {
-      navigate(targetUrl, { replace: true });
+      // If the path itself changed (e.g. home -> player), add to history
+      // If only parameters changed (e.g. song1 -> song2), replace history
+      const isPathChange = location.pathname !== `/${targetPath}`;
+      navigate(targetUrl, { replace: !isPathChange });
     }
-  }, [activeTab, isPlayerExpanded, currentSongIndex, selectedReelId, navigate, location.pathname, location.search]);
+  }, [activeTab, isPlayerExpanded, showAccountSettings, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, hasHandledDeepLink, loading, searchParams, songs]);
+
+  useEffect(() => {
+    if (showAccountSettings && currentUser) {
+      setAccountForm({ 
+        name: currentUser.name, 
+        password: '', 
+        profilePic: currentUser.profilePic || '' 
+      });
+    }
+  }, [showAccountSettings, currentUser]);
 
   useEffect(() => {
     if (isPlayerExpanded && syncedLyrics.length > 0 && lyricsContainerRef.current) {
@@ -473,76 +504,92 @@ export default function App() {
   };
 
   const shareContent = async (item: Song) => {
-    const url = new URL(window.location.origin);
-    if (item.isReel) {
-      url.searchParams.set('reelId', item.id.toString());
-    } else {
-      url.searchParams.set('songId', item.id.toString());
-    }
-    const shareUrl = url.toString();
+    try {
+      const url = new URL(window.location.href);
+      url.search = ''; // Clear existing parameters
+      
+      if (item.isReel) {
+        url.searchParams.set('reelId', item.id.toString());
+      } else {
+        url.searchParams.set('songId', item.id.toString());
+      }
+      const shareUrl = url.toString();
 
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: item.title,
-          text: `Check out ${item.title} by ${item.artist} on Npotify!`,
-          url: shareUrl,
-        });
-      } catch (error: any) {
-        // If sharing fails (e.g. canceled or blocked by browser), fallback to clipboard
-        if (error.name !== 'AbortError') {
-          console.error("Share failed:", error);
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: item.title,
+            text: `Check out ${item.title} by ${item.artist} on Npotify!`,
+            url: shareUrl,
+          });
+        } catch (error: any) {
+          if (error.name !== 'AbortError') {
+            console.error("Share failed:", error);
+          }
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast("Link copied to clipboard!", 'success');
+          } catch (clipboardError) {
+            console.error("Clipboard fallback failed:", clipboardError);
+          }
         }
-        
-        // Always fallback to clipboard for better UX in restricted environments
+      } else {
         try {
           await navigator.clipboard.writeText(shareUrl);
           showToast("Link copied to clipboard!", 'success');
-        } catch (clipboardError) {
-          console.error("Clipboard fallback failed:", clipboardError);
+        } catch (error) {
+          console.error("Clipboard failed:", error);
         }
       }
-    } else {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        showToast("Link copied to clipboard!", 'success');
-      } catch (error) {
-        console.error("Clipboard failed:", error);
-      }
+    } catch (error) {
+      console.error("Share failed:", error);
     }
   };
 
   useEffect(() => {
-    if (songs.length > 0 && !hasHandledDeepLink) {
-      const songId = searchParams.get('songId');
-      const reelId = searchParams.get('reelId');
+    // Wait for songs to load
+    if (loading || songs.length === 0 || hasHandledDeepLink) return;
 
-      if (songId) {
-        const id = parseInt(songId);
-        const song = songs.find(s => s.id === id);
-        if (song) {
-          playSong(id);
-          setIsPlayerExpanded(true);
-        }
-      } else if (reelId) {
-        const id = parseInt(reelId);
-        const reel = songs.find(s => s.id === id && s.isReel);
-        if (reel) {
-          setActiveTab('reels');
-          setSelectedReelId(id);
-          setReelScrollTarget(id);
-        }
+    const params = new URLSearchParams(window.location.search);
+    const songId = params.get('songId');
+    const reelId = params.get('reelId');
+
+    if (songId) {
+      const id = parseInt(songId);
+      const songIndex = songs.findIndex(s => s.id === id);
+      if (songIndex !== -1) {
+        playSong(songIndex);
+        setIsPlayerExpanded(true);
+        setHasHandledDeepLink(true);
+        return;
       }
-      setHasHandledDeepLink(true);
+    } 
+    
+    if (reelId) {
+      const id = parseInt(reelId);
+      const reel = songs.find(s => s.id === id && s.isReel);
+      if (reel) {
+        setActiveTab('reels');
+        setSelectedReelId(id);
+        setReelScrollTarget(id);
+        setHasHandledDeepLink(true);
+        return;
+      }
     }
-  }, [songs.length, hasHandledDeepLink, searchParams]);
+
+    setHasHandledDeepLink(true);
+  }, [loading, songs, hasHandledDeepLink]);
 
   useEffect(() => {
-    if (activeTab === 'reels' && isPlaying) {
-      setIsPlaying(false);
-      audioRef.current?.pause();
+    // Only pause if we are NOT in the middle of handling a deep link for a reel
+    if (activeTab === 'reels' && isPlaying && hasHandledDeepLink) {
+      const reelId = searchParams.get('reelId');
+      if (!reelId) {
+        setIsPlaying(false);
+        audioRef.current?.pause();
+      }
     }
-  }, [activeTab, isPlaying]);
+  }, [activeTab, isPlaying, hasHandledDeepLink, searchParams]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
