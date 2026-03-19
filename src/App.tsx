@@ -171,6 +171,7 @@ export default function App() {
   const [isReelsMuted, setIsReelsMuted] = useState(false);
   const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
   const [selectedReelId, setSelectedReelId] = useState<number | null>(null);
+  const [reelScrollTarget, setReelScrollTarget] = useState<number | null>(null);
   const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyric[]>([]);
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -529,13 +530,7 @@ export default function App() {
         if (reel) {
           setActiveTab('reels');
           setSelectedReelId(id);
-          // Wait for reels to render then scroll
-          setTimeout(() => {
-            const reelElement = document.getElementById(`reel-${id}`);
-            if (reelElement) {
-              reelElement.scrollIntoView({ behavior: 'smooth' });
-            }
-          }, 500);
+          setReelScrollTarget(id);
         }
       }
       setHasHandledDeepLink(true);
@@ -846,17 +841,27 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (activeTab === 'reels' && selectedReelId !== null && reelsContainerRef.current) {
-      // Use a small timeout to ensure the DOM is ready
-      setTimeout(() => {
-        const reelElement = document.getElementById(`reel-${selectedReelId}`);
-        if (reelElement) {
-          reelElement.scrollIntoView({ behavior: 'auto', block: 'start' });
-        }
-        setSelectedReelId(null);
-      }, 100);
+    if (activeTab === 'reels' && reelScrollTarget !== null && reelsContainerRef.current) {
+      const container = reelsContainerRef.current;
+      const index = reelSongs.findIndex(s => s.id === reelScrollTarget);
+      
+      if (index !== -1) {
+        // Use a small timeout to ensure the DOM is ready and clientHeight is accurate
+        const scrollTimeout = setTimeout(() => {
+          if (container.clientHeight > 0) {
+            container.scrollTo({
+              top: index * container.clientHeight,
+              behavior: 'auto' // Use auto to avoid conflict with CSS snap
+            });
+            setReelScrollTarget(null);
+          }
+        }, 150);
+        return () => clearTimeout(scrollTimeout);
+      } else {
+        setReelScrollTarget(null);
+      }
     }
-  }, [activeTab, selectedReelId]);
+  }, [activeTab, reelScrollTarget, reelSongs]);
 
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-spotify-base text-white overflow-hidden font-sans">
@@ -1016,6 +1021,7 @@ export default function App() {
                       <div 
                         key={i} 
                         onClick={() => {
+                          setReelScrollTarget(reel.id);
                           setSelectedReelId(reel.id);
                           setActiveTab('reels');
                         }}
