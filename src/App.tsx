@@ -65,7 +65,7 @@ const GOOGLE_SHEET_ID = (import.meta as any).env?.VITE_GOOGLE_SHEET_ID || '1t9EO
 
 // --- HELPERS ---
 const formatAudioUrl = (url: string) => {
-  if (!url) return "";
+  if (!url || typeof url !== 'string') return "";
   
   // Handle Google Drive links
   if (url.includes('drive.google.com')) {
@@ -125,13 +125,14 @@ interface SyncedLyric {
 }
 
 interface Song {
-  id: number;
+  id: number | string;
   title: string;
   artist: string;
   cover: string;
   url: string;
   isReel?: boolean;
   lyrics?: string;
+  isApiSong?: boolean;
 }
 
 interface User {
@@ -141,11 +142,35 @@ interface User {
   profilePic?: string;
 }
 
+const fetchApiSongs = async (query: string): Promise<Song[]> => {
+  try {
+    const res = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (data.data && Array.isArray(data.data.results)) {
+      return data.data.results.map((song: any) => {
+        const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
+        const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
+        return {
+          id: song.id,
+          title: song.name,
+          artist: song.primaryArtists,
+          cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
+          url: highestQualityDownload?.link || "",
+          isApiSong: true
+        };
+      }).filter((s: Song) => s.url !== "");
+    }
+  } catch (err) {
+    console.error("Failed to fetch API songs", err);
+  }
+  return [];
+};
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentSongIndex, setCurrentSongIndex] = useState<number | null>(null);
+  const [currentSongIndex, setCurrentSongIndex] = useState<number | string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -156,9 +181,11 @@ export default function App() {
     return validTabs.includes(path) ? (path as any) : 'home';
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [apiSearchLoading, setApiSearchLoading] = useState(false);
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(() => {
     return window.location.pathname.replace('/', '') === 'player';
   });
+  const [isFullLyricsOpen, setIsFullLyricsOpen] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
   const [showPremiumFrame, setShowPremiumFrame] = useState(false);
@@ -169,9 +196,8 @@ export default function App() {
   const navigate = useNavigate();
   const [hasHandledDeepLink, setHasHandledDeepLink] = useState(false);
   const [isReelsMuted, setIsReelsMuted] = useState(false);
-  const [tapAnimation, setTapAnimation] = useState<{ id: number; type: 'play' | 'pause' } | null>(null);
-  const [selectedReelId, setSelectedReelId] = useState<number | null>(null);
-  const [reelScrollTarget, setReelScrollTarget] = useState<number | null>(null);
+  const [tapAnimation, setTapAnimation] = useState<{ id: number | string; type: 'play' | 'pause' } | null>(null);
+  const [selectedReelId, setSelectedReelId] = useState<number | string | null>(null);
   const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyric[]>([]);
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -183,10 +209,8 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
-  const [likedSongIds, setLikedSongIds] = useState<number[]>([]);
-  const [showAccountSettings, setShowAccountSettings] = useState(() => {
-    return window.location.pathname.replace('/', '') === 'account';
-  });
+  const [likedSongIds, setLikedSongIds] = useState<(number | string)[]>([]);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [accountForm, setAccountForm] = useState({ name: '', password: '', profilePic: '' });
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -198,76 +222,66 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reelsContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
-  const lastPlayedIndex = useRef<number | null>(null);
 
   // Handle URL sub-pages and back button
   useEffect(() => {
-    if (loading || songs.length === 0) return;
-
     const path = location.pathname.replace('/', '');
-    const params = new URLSearchParams(location.search);
-    const songId = params.get('songId');
-    const reelId = params.get('reelId');
+    const songId = searchParams.get('songId');
+    const reelId = searchParams.get('reelId');
     
-    // Handle Account Settings
-    if (path === 'account') {
-      setShowAccountSettings(true);
-      setIsPlayerExpanded(false);
-    } else if (path === 'player') {
+    // Handle Player Expansion
+    if (path === 'player') {
       setIsPlayerExpanded(true);
-      setShowAccountSettings(false);
-      
-      if (songId) {
-        const id = parseInt(songId);
-        const songIndex = songs.findIndex(s => s.id === id);
-        if (songIndex !== -1 && songIndex !== currentSongIndex) {
-          playSong(songIndex);
-        }
-      }
     } else {
-      setShowAccountSettings(false);
       setIsPlayerExpanded(false);
-      
-      const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
+    }
+
+    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
+    if (path !== 'player') {
       if (validTabs.includes(path)) {
         setActiveTab(path as any);
-        
-        if (path === 'reels' && reelId) {
-          const id = parseInt(reelId);
-          if (id !== selectedReelId) {
-            setSelectedReelId(id);
-            setReelScrollTarget(id);
-          }
-        }
       } else if (path === '') {
         setActiveTab('home');
       }
     }
 
-    // Mark deep link as handled once we've processed the initial URL
-    if (!hasHandledDeepLink) {
-      setHasHandledDeepLink(true);
+    if (songId && songs.length > 0) {
+      const id = isNaN(Number(songId)) ? songId : parseInt(songId);
+      if (currentSongIndex !== id) {
+        const songExists = songs.some(s => s.id === id);
+        if (songExists) {
+          setCurrentSongIndex(id);
+        }
+      }
     }
-  }, [location.pathname, location.search, loading, songs, hasHandledDeepLink]);
+
+    if (reelId && songs.length > 0) {
+      const id = isNaN(Number(reelId)) ? reelId : parseInt(reelId);
+      if (selectedReelId !== id) {
+        setSelectedReelId(id);
+        // Scroll to reel if needed
+        setTimeout(() => {
+          const reelElement = document.getElementById(`reel-${id}`);
+          if (reelElement) {
+            reelElement.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 500);
+      }
+    }
+  }, [location.pathname, location.search, songs.length]);
 
   useEffect(() => {
-    if (!hasHandledDeepLink || loading) return;
-
     let targetPath = activeTab === 'home' ? '' : activeTab;
     
-    if (showAccountSettings) {
-      targetPath = 'account';
-    } else if (isPlayerExpanded) {
+    if (isPlayerExpanded) {
       targetPath = 'player';
     }
 
     const newParams = new URLSearchParams();
-    // Only include songId if player is expanded
-    if (isPlayerExpanded && currentSongIndex !== null && songs[currentSongIndex]) {
-      newParams.set('songId', songs[currentSongIndex].id.toString());
+    if (currentSongIndex !== null) {
+      newParams.set('songId', currentSongIndex.toString());
     }
     
-    // Only include reelId if on reels tab
     if (activeTab === 'reels' && selectedReelId !== null) {
       newParams.set('reelId', selectedReelId.toString());
     }
@@ -275,26 +289,13 @@ export default function App() {
     const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
     
     if (location.pathname + location.search !== targetUrl) {
-      const isPathChange = location.pathname !== `/${targetPath}`;
-      const isOpeningSubPage = (targetPath === 'player' || targetPath === 'account') && location.pathname !== `/${targetPath}`;
-      const isClosingSubPage = (location.pathname === '/player' || location.pathname === '/account') && targetPath !== location.pathname.replace('/', '');
-      
-      // Use replace when closing a sub-page or when only parameters changed
-      const shouldReplace = isClosingSubPage || !isPathChange;
-      
-      navigate(targetUrl, { replace: shouldReplace });
+      // Use push to allow back button to work, except for initial load
+      navigate(targetUrl, { replace: !hasHandledDeepLink });
+      if (!hasHandledDeepLink) {
+        setHasHandledDeepLink(true);
+      }
     }
-  }, [activeTab, isPlayerExpanded, showAccountSettings, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, hasHandledDeepLink, loading, songs]);
-
-  useEffect(() => {
-    if (showAccountSettings && currentUser) {
-      setAccountForm({ 
-        name: currentUser.name, 
-        password: '', 
-        profilePic: currentUser.profilePic || '' 
-      });
-    }
-  }, [showAccountSettings, currentUser]);
+  }, [activeTab, isPlayerExpanded, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, songs]);
 
   useEffect(() => {
     if (isPlayerExpanded && syncedLyrics.length > 0 && lyricsContainerRef.current) {
@@ -318,7 +319,11 @@ export default function App() {
           entries.forEach((entry) => {
             const video = entry.target as HTMLVideoElement;
             if (entry.isIntersecting) {
-              video.play().catch(err => console.log("Auto-play blocked:", err));
+              video.play().catch(err => {
+                if (err.name !== 'AbortError') {
+                  console.log("Auto-play blocked:", err);
+                }
+              });
               // Update selectedReelId when it becomes visible
               const reelId = Object.keys(videoRefs.current).find(key => videoRefs.current[key] === video);
               if (reelId) {
@@ -349,6 +354,61 @@ export default function App() {
       };
     }
   }, [activeTab, songs]);
+
+  // Handle strict 1-item scroll for reels
+  useEffect(() => {
+    const container = reelsContainerRef.current;
+    if (!container || activeTab !== 'reels') return;
+
+    let isScrolling = false;
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      if (isScrolling || Math.abs(e.deltaY) < 10) return;
+      isScrolling = true;
+
+      const direction = e.deltaY > 0 ? 1 : -1;
+      container.scrollBy({
+        top: direction * container.clientHeight,
+        behavior: 'smooth'
+      });
+
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        isScrolling = false;
+      }, 600);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (isScrolling) return;
+        isScrolling = true;
+
+        const direction = e.key === 'ArrowDown' ? 1 : -1;
+        container.scrollBy({
+          top: direction * container.clientHeight,
+          behavior: 'smooth'
+        });
+
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          isScrolling = false;
+        }, 600);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(scrollTimeout);
+    };
+  }, [activeTab]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -476,7 +536,7 @@ export default function App() {
     }
   };
 
-  const toggleLike = async (songId: number) => {
+  const toggleLike = async (songId: number | string) => {
     if (!auth.currentUser) {
       setAuthMode('login');
       setShowAuthModal(true);
@@ -528,60 +588,55 @@ export default function App() {
   };
 
   const shareContent = async (item: Song) => {
-    try {
-      const url = new URL(window.location.href);
-      url.search = ''; // Clear existing parameters
-      
-      if (item.isReel) {
-        url.searchParams.set('reelId', item.id.toString());
-      } else {
-        url.searchParams.set('songId', item.id.toString());
-      }
-      const shareUrl = url.toString();
+    const url = new URL(window.location.origin);
+    if (item.isReel) {
+      url.pathname = '/reels';
+      url.searchParams.set('reelId', item.id.toString());
+    } else {
+      url.pathname = '/player';
+      url.searchParams.set('songId', item.id.toString());
+    }
+    const shareUrl = url.toString();
 
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: item.title,
-            text: `Check out ${item.title} by ${item.artist} on Npotify!`,
-            url: shareUrl,
-          });
-        } catch (error: any) {
-          if (error.name !== 'AbortError') {
-            console.error("Share failed:", error);
-          }
-          try {
-            await navigator.clipboard.writeText(shareUrl);
-            showToast("Link copied to clipboard!", 'success');
-          } catch (clipboardError) {
-            console.error("Clipboard fallback failed:", clipboardError);
-          }
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: item.title,
+          text: `Check out ${item.title} by ${item.artist} on Npotify!`,
+          url: shareUrl,
+        });
+      } catch (error: any) {
+        // If sharing fails (e.g. canceled or blocked by browser), fallback to clipboard
+        if (error.name !== 'AbortError') {
+          console.error("Share failed:", error);
         }
-      } else {
+        
+        // Always fallback to clipboard for better UX in restricted environments
         try {
           await navigator.clipboard.writeText(shareUrl);
           showToast("Link copied to clipboard!", 'success');
-        } catch (error) {
-          console.error("Clipboard failed:", error);
+        } catch (clipboardError) {
+          console.error("Clipboard fallback failed:", clipboardError);
         }
       }
-    } catch (error) {
-      console.error("Share failed:", error);
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast("Link copied to clipboard!", 'success');
+      } catch (error) {
+        console.error("Clipboard failed:", error);
+      }
     }
   };
 
-  // Initial deep link handling is now merged into the location listener
+
 
   useEffect(() => {
-    // Only pause if we are NOT in the middle of handling a deep link for a reel
-    if (activeTab === 'reels' && isPlaying && hasHandledDeepLink) {
-      const reelId = searchParams.get('reelId');
-      if (!reelId) {
-        setIsPlaying(false);
-        audioRef.current?.pause();
-      }
+    if (activeTab === 'reels' && isPlaying) {
+      setIsPlaying(false);
+      audioRef.current?.pause();
     }
-  }, [activeTab, isPlaying, hasHandledDeepLink, searchParams]);
+  }, [activeTab, isPlaying]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
@@ -598,33 +653,22 @@ export default function App() {
             { id: 2, title: "Blinding Lights", artist: "The Weeknd", cover: "https://picsum.photos/seed/blinding/400/400", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", lyrics: "" }
           ];
           
-          const mockSongs = await Promise.all(initialMockSongs.map(async (song) => {
-            const fetched = await fetchSyncedLyrics(song.title, song.artist);
-            return { ...song, lyrics: fetched || song.lyrics };
-          }));
-          
-          setSongs(mockSongs);
+          setSongs(initialMockSongs);
           setLoading(false);
           return;
         }
         const url = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:json`;
         const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const text = await response.text();
         const json = JSON.parse(text.substring(47, text.length - 2));
-        const fetchedSongs: Song[] = await Promise.all(json.table.rows.map(async (row: any, index: number) => {
-          const title = row.c[0]?.v || "Unknown Title";
-          const artist = row.c[1]?.v || "Unknown Artist";
-          const lyricsVal = row.c[4]?.v || "";
-          
-          let lyrics = lyricsVal;
-          
-          // If lyrics is empty or a Spotify link, try to fetch synced lyrics automatically
-          if (!lyrics || lyrics.includes('spotify.com')) {
-            const fetched = await fetchSyncedLyrics(title, artist);
-            if (fetched) {
-              lyrics = fetched;
-            }
-          }
+        const fetchedSongs: Song[] = json.table.rows.map((row: any, index: number) => {
+          if (!row || !row.c) return null;
+          const title = String(row.c[0]?.v || "Unknown Title");
+          const artist = String(row.c[1]?.v || "Unknown Artist");
+          const lyricsVal = String(row.c[4]?.v || "");
 
           return {
             id: index,
@@ -633,13 +677,34 @@ export default function App() {
             cover: row.c[2]?.v || "https://picsum.photos/seed/music/400/400",
             url: formatAudioUrl(row.c[3]?.v || ""),
             isReel: title.includes('#'),
-            lyrics: lyrics
+            lyrics: lyricsVal
           };
-        }));
+        }).filter(Boolean);
         setSongs(fetchedSongs.filter((s: Song) => s.url !== ""));
         setLoading(false);
-      } catch (error) {
+        
+        // Fetch default API songs in background for autoplay
+        fetchApiSongs("top hits").then(apiSongs => {
+          setSongs(prev => {
+            const newSongs = [...prev];
+            let added = false;
+            apiSongs.forEach(apiSong => {
+              // Check if song already exists by title and artist (case-insensitive)
+              const exists = newSongs.some(s => 
+                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
+                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
+              );
+              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
+                newSongs.push(apiSong);
+                added = true;
+              }
+            });
+            return added ? newSongs : prev;
+          });
+        });
+      } catch (error: any) {
         console.error("Error fetching songs:", error);
+        showToast("Error fetching songs: " + error.message, 'error');
         setLoading(false);
       }
     };
@@ -648,35 +713,35 @@ export default function App() {
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (currentSongIndex !== null && audio && songs[currentSongIndex]) {
-      const song = songs[currentSongIndex];
-      const newSrc = song.url;
+    const currentSongObj = currentSongIndex !== null ? songs.find(s => s.id === currentSongIndex) : null;
+    if (currentSongIndex !== null && audio && currentSongObj) {
+      const newSrc = currentSongObj.url;
       
-      const isNewSong = lastPlayedIndex.current !== currentSongIndex;
-      const isNewUrl = audio.src !== newSrc;
-      
-      // Only update src and play if it's actually a different song or URL
-      if (isNewSong || isNewUrl) {
+      // Only update src if it's different to prevent interrupting current load
+      if (audio.src !== newSrc) {
         audio.src = newSrc;
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(error => {
-            if (error.name !== 'AbortError') {
-              console.error("Playback failed:", error);
-            }
-          });
-        }
-        setIsPlaying(true);
-        lastPlayedIndex.current = currentSongIndex;
       }
       
-      // Update lyrics independently of playback state to avoid stutters
-      if (song.lyrics) {
-        const parsed = parseLyrics(song.lyrics);
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          // Ignore AbortError caused by rapid navigation/interruption
+          if (error.name !== 'AbortError') {
+            console.error("Playback failed:", error);
+          }
+        });
+      }
+      setIsPlaying(true);
+      if (currentSongObj.lyrics) {
+        const parsed = parseLyrics(currentSongObj.lyrics!);
         setSyncedLyrics(parsed);
-        if (parsed.length === 0) syncLyrics();
+        // If lyrics exist but aren't synced, try to fetch synced ones automatically
+        if (parsed.length === 0) {
+          syncLyrics();
+        }
       } else {
         setSyncedLyrics([]);
+        // Automatically try to fetch lyrics if missing
         syncLyrics();
       }
     }
@@ -723,7 +788,7 @@ export default function App() {
     }
   };
 
-  const playSong = (index: number) => {
+  const playSong = (index: number | string) => {
     if (currentSongIndex === index) {
       togglePlay();
     } else {
@@ -793,7 +858,36 @@ export default function App() {
     }
   };
 
-  const currentSong = currentSongIndex !== null ? songs[currentSongIndex] : null;
+  const currentSong = currentSongIndex !== null ? songs.find(s => s.id === currentSongIndex) || null : null;
+
+  useEffect(() => {
+    if (searchQuery.length > 2) {
+      setApiSearchLoading(true);
+      const timer = setTimeout(() => {
+        fetchApiSongs(searchQuery).then(apiSongs => {
+          setSongs(prev => {
+            const newSongs = [...prev];
+            let added = false;
+            apiSongs.forEach(apiSong => {
+              const exists = newSongs.some(s => 
+                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
+                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
+              );
+              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
+                newSongs.push(apiSong);
+                added = true;
+              }
+            });
+            return added ? newSongs : prev;
+          });
+          setApiSearchLoading(false);
+        });
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setApiSearchLoading(false);
+    }
+  }, [searchQuery]);
 
   const filteredSongs = songs.filter(song => 
     song.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -881,27 +975,19 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (activeTab === 'reels' && reelScrollTarget !== null && reelsContainerRef.current) {
-      const container = reelsContainerRef.current;
-      const index = reelSongs.findIndex(s => s.id === reelScrollTarget);
-      
-      if (index !== -1) {
-        // Use a small timeout to ensure the DOM is ready and clientHeight is accurate
-        const scrollTimeout = setTimeout(() => {
-          if (container.clientHeight > 0) {
-            container.scrollTo({
-              top: index * container.clientHeight,
-              behavior: 'auto' // Use auto to avoid conflict with CSS snap
-            });
-            setReelScrollTarget(null);
-          }
-        }, 150);
-        return () => clearTimeout(scrollTimeout);
-      } else {
-        setReelScrollTarget(null);
-      }
+    if (activeTab === 'reels' && selectedReelId !== null && reelsContainerRef.current) {
+      // Use a small timeout to ensure the DOM is ready
+      setTimeout(() => {
+        const reelElement = document.getElementById(`reel-${selectedReelId}`);
+        if (reelElement) {
+          reelElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+        }
+        setSelectedReelId(null);
+      }, 100);
     }
-  }, [activeTab, reelScrollTarget, reelSongs]);
+  }, [activeTab, selectedReelId]);
+
+
 
   return (
     <div className="h-screen flex flex-col lg:flex-row bg-spotify-base text-white overflow-hidden font-sans">
@@ -989,7 +1075,7 @@ export default function App() {
                   </div>
                 ))
               ) : (
-                songs.filter(s => !s.isReel).slice(0, 8).map((song, i) => (
+                songs.filter(s => !s.isReel && !s.isApiSong).slice(0, 8).map((song, i) => (
                   <div 
                     key={i} 
                     onClick={() => playSong(song.id)}
@@ -1019,7 +1105,7 @@ export default function App() {
                     </div>
                   ))
                 ) : (
-                  songs.filter(s => !s.isReel).map((song, i) => (
+                  songs.filter(s => !s.isReel && !s.isApiSong).map((song, i) => (
                     <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
                       <div className="relative aspect-square mb-3">
                         <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
@@ -1061,7 +1147,6 @@ export default function App() {
                       <div 
                         key={i} 
                         onClick={() => {
-                          setReelScrollTarget(reel.id);
                           setSelectedReelId(reel.id);
                           setActiveTab('reels');
                         }}
@@ -1090,7 +1175,7 @@ export default function App() {
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Albums featuring songs you like</h2>
               <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
-                {songs.filter(s => !s.isReel).slice().reverse().map((song, i) => (
+                {songs.filter(s => !s.isReel && !s.isApiSong).slice().reverse().map((song, i) => (
                   <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer">
                     <div className="relative aspect-square mb-3">
                       <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
@@ -1233,7 +1318,7 @@ export default function App() {
             {loading ? (
               // Reels Skeleton
               Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden">
+                <div key={i} className="h-full w-full snap-start snap-always relative flex items-center justify-center bg-black overflow-hidden">
                   <div className="relative h-full w-full max-w-[calc(100vh*9/16)] bg-zinc-900 flex items-center justify-center overflow-hidden">
                     <Skeleton className="w-full h-full rounded-none" />
                     <div className="absolute bottom-24 left-4 right-16 z-10 space-y-2">
@@ -1252,7 +1337,7 @@ export default function App() {
                 <div 
                   key={reel.id} 
                   id={`reel-${reel.id}`}
-                  className="h-full w-full snap-start relative flex items-center justify-center bg-black overflow-hidden"
+                  className="h-full w-full snap-start snap-always relative flex items-center justify-center bg-black overflow-hidden"
                 >
                   <div 
                     className="relative h-full w-full md:max-w-[calc(100vh*9/16)] bg-zinc-900 shadow-2xl flex items-center justify-center overflow-hidden"
@@ -1269,7 +1354,11 @@ export default function App() {
                       onClick={(e) => {
                         const video = e.currentTarget;
                         if (video.paused) {
-                          video.play().catch(err => console.error("Play failed:", err));
+                          video.play().catch(err => {
+                            if (err.name !== 'AbortError') {
+                              console.error("Play failed:", err);
+                            }
+                          });
                           setTapAnimation({ id: reel.id, type: 'play' });
                         } else {
                           video.pause();
@@ -1869,9 +1958,21 @@ export default function App() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-0 z-50 bg-[#121212] p-6 flex flex-col pointer-events-auto overflow-y-auto"
+              className="fixed inset-0 z-50 bg-black p-6 flex flex-col pointer-events-auto overflow-y-auto"
             >
-              <div className="max-w-md mx-auto w-full flex flex-col h-full min-h-[700px]">
+              {/* Dynamic Blurred Background */}
+              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                <img 
+                  src={currentSong.cover} 
+                  alt="" 
+                  className="w-full h-full object-cover opacity-70 blur-[100px] scale-150 saturate-200" 
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-black/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-black/50 to-transparent" />
+              </div>
+
+              <div className="max-w-md mx-auto w-full flex flex-col h-full min-h-[700px] relative z-10">
                 <header className="flex items-center justify-between mb-8">
                   <button onClick={() => setIsPlayerExpanded(false)} className="text-white">
                     <ChevronDown size={32} />
@@ -2039,7 +2140,10 @@ export default function App() {
                   </div>
 
                   {/* Lyrics Card */}
-                  <div className="bg-[#4d4d33] rounded-xl p-4 mt-auto mb-4">
+                  <div 
+                    className="bg-[#4d4d33] rounded-xl p-4 mt-auto mb-4 cursor-pointer hover:bg-[#5d5d43] transition-colors"
+                    onClick={() => setIsFullLyricsOpen(true)}
+                  >
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-sm font-bold text-white">Lyrics preview</h3>
                       <div className="flex items-center gap-2">
@@ -2055,7 +2159,7 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <div className="space-y-2 max-h-[120px] overflow-hidden">
+                    <div className="space-y-2 max-h-[120px] overflow-hidden pointer-events-none">
                        {syncedLyrics.length > 0 ? (
                          syncedLyrics.slice(0, 3).map((l, i) => (
                            <p key={i} className="text-lg font-bold text-white/60">{l.text}</p>
@@ -2073,6 +2177,73 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Full Lyrics Overlay */}
+              <AnimatePresence>
+                {isFullLyricsOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 50 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 50 }}
+                    className="absolute inset-0 z-50 bg-[#121212] flex flex-col"
+                  >
+                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                      <img 
+                        src={currentSong.cover} 
+                        alt="" 
+                        className="w-full h-full object-cover opacity-30 blur-[100px] scale-150 saturate-200" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-black/60" />
+                    </div>
+                    
+                    <div className="relative z-10 flex flex-col h-full p-6">
+                      <header className="flex items-center justify-between mb-8">
+                        <button onClick={() => setIsFullLyricsOpen(false)} className="p-2 bg-black/40 rounded-full text-white hover:bg-black/60 transition-colors">
+                          <X size={24} />
+                        </button>
+                        <h2 className="text-sm font-bold tracking-widest text-white/80 uppercase">Lyrics</h2>
+                        <div className="w-10" />
+                      </header>
+
+                      <div className="flex-1 overflow-y-auto scrollbar-hide pb-32" ref={lyricsContainerRef}>
+                        {syncedLyrics.length > 0 ? (
+                          <div className="space-y-6 py-10">
+                            {syncedLyrics.map((lyric, index) => {
+                              const isActive = progress >= lyric.time && (index === syncedLyrics.length - 1 || progress < syncedLyrics[index + 1].time);
+                              return (
+                                <p 
+                                  key={index} 
+                                  className={`text-3xl font-bold transition-all duration-300 ${isActive ? 'text-white scale-105 origin-left' : 'text-white/40 hover:text-white/60 cursor-pointer'}`}
+                                  onClick={() => {
+                                    if (audioRef.current) {
+                                      audioRef.current.currentTime = lyric.time;
+                                    }
+                                  }}
+                                >
+                                  {lyric.text}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        ) : currentSong.lyrics ? (
+                          <div className="py-10">
+                            <p className="text-2xl font-bold text-white/80 whitespace-pre-line leading-relaxed">
+                              {currentSong.lyrics}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center h-full">
+                            <p className="text-xl font-bold text-white/40 italic">
+                              {isSyncingLyrics ? "Searching for lyrics..." : "Lyrics not available."}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
