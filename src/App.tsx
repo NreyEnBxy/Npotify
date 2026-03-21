@@ -142,9 +142,19 @@ interface User {
   profilePic?: string;
 }
 
+interface AppState {
+  page: 'home' | 'search' | 'reels' | 'premium' | 'library' | 'reel' | 'song';
+  player: 'mini' | 'fullscreen' | 'lyrics';
+  id: number | string | null;
+  previousPage: string | null;
+}
+
 const fetchApiSongs = async (query: string): Promise<Song[]> => {
   try {
-    const res = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) {
+      throw new Error(`API responded with status: ${res.status}`);
+    }
     const data = await res.json();
     if (data.data && Array.isArray(data.data.results)) {
       return data.data.results.map((song: any) => {
@@ -175,16 +185,118 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'reels' | 'premium' | 'library'>(() => {
+  const [appState, setAppState] = useState<AppState>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
     const path = window.location.pathname.replace('/', '');
-    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
-    return validTabs.includes(path) ? (path as any) : 'home';
+    
+    const validPages = ['home', 'search', 'reels', 'premium', 'library', 'reel', 'song'];
+    let page: AppState['page'] = validPages.includes(path) ? (path as any) : 'home';
+    
+    // Map /song and /reel to correct internal pages
+    if (page === 'song') page = 'home';
+    if (page === 'reel') page = 'reels';
+
+    return {
+      page: page,
+      player: path === 'song' || params.has('songId') ? 'fullscreen' : 'mini',
+      id: id || params.get('songId') || params.get('reelId') || null,
+      previousPage: null
+    };
   });
+
+  const navigateTo = (newState: Partial<AppState>, replace = false) => {
+    const updatedState = { ...appState, ...newState };
+    
+    // If navigating to a main section, set previousPage to home if not already
+    if (['library', 'reels', 'search', 'premium'].includes(updatedState.page) && updatedState.page !== appState.page) {
+      updatedState.previousPage = 'home';
+    }
+
+    // Rule: From any main section -> Back -> Home
+    // We achieve this by replacing the current main section in history instead of pushing a new one
+    const isMainSection = (p: string) => ['library', 'reels', 'search', 'premium'].includes(p);
+    const shouldReplace = replace || (isMainSection(updatedState.page) && isMainSection(appState.page));
+
+    setAppState(updatedState);
+    
+    // Construct URL
+    let path = updatedState.page === 'home' ? '/' : `/${updatedState.page}`;
+    const params = new URLSearchParams();
+    
+    if (updatedState.player === 'fullscreen' || updatedState.player === 'lyrics') {
+      path = '/song';
+      if (currentSongIndex) params.set('id', currentSongIndex.toString());
+    } else if (updatedState.page === 'reels' && updatedState.id) {
+      path = '/reel';
+      params.set('id', updatedState.id.toString());
+    } else if (updatedState.id) {
+      params.set('id', updatedState.id.toString());
+    }
+
+    const url = `${path}${params.toString() ? '?' + params.toString() : ''}`;
+    
+    if (shouldReplace) {
+      window.history.replaceState(updatedState, '', url);
+    } else {
+      window.history.pushState(updatedState, '', url);
+    }
+  };
+
+  // Handle PopState (Back Button)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state) {
+        const state = event.state as AppState;
+        
+        // Apply Back Button Rules
+        // If we are moving from fullscreen to mini, it's already handled by state
+        // If we are in a main section and going back, the state should naturally be Home if we pushed it correctly
+        
+        setAppState(state);
+        
+        // Sync internal IDs
+        if (state.page === 'reels' && state.id) {
+          setSelectedReelId(state.id);
+        }
+        if (state.id && state.player === 'fullscreen') {
+          const id = isNaN(Number(state.id)) ? state.id : parseInt(state.id as string);
+          setCurrentSongIndex(id);
+        }
+      } else {
+        // Default to home if no state
+        const homeState: AppState = { page: 'home', player: 'mini', id: null, previousPage: null };
+        setAppState(homeState);
+        window.history.replaceState(homeState, '', '/');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initial push state if none exists
+    if (!window.history.state) {
+      window.history.replaceState(appState, '', window.location.pathname + window.location.search);
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [appState, currentSongIndex]);
+
+  // Sync currentSongIndex and selectedReelId from appState
+  useEffect(() => {
+    if (appState.id) {
+      if (appState.page === 'reels' || window.location.pathname.includes('reel')) {
+        setSelectedReelId(appState.id);
+      } else {
+        const id = isNaN(Number(appState.id)) ? appState.id : parseInt(appState.id as string);
+        if (currentSongIndex !== id) {
+          setCurrentSongIndex(id);
+        }
+      }
+    }
+  }, [appState.id, appState.page]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [apiSearchLoading, setApiSearchLoading] = useState(false);
-  const [isPlayerExpanded, setIsPlayerExpanded] = useState(() => {
-    return window.location.pathname.replace('/', '') === 'player';
-  });
   const [isFullLyricsOpen, setIsFullLyricsOpen] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
@@ -223,79 +335,35 @@ export default function App() {
   const reelsContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
-  // Handle URL sub-pages and back button
+  // Horizontal scroll helper for desktop
+  const handleHorizontalScroll = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY !== 0) {
+      e.currentTarget.scrollLeft += e.deltaY;
+    }
+  };
+
+  const isPlayerExpanded = appState.player === 'fullscreen' || appState.player === 'lyrics';
+
+  // Handle Deep Linking on load
   useEffect(() => {
-    const path = location.pathname.replace('/', '');
-    const songId = searchParams.get('songId');
-    const reelId = searchParams.get('reelId');
-    
-    // Handle Player Expansion
-    if (path === 'player') {
-      setIsPlayerExpanded(true);
-    } else {
-      setIsPlayerExpanded(false);
-    }
+    if (songs.length > 0 && !hasHandledDeepLink) {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('id') || params.get('songId') || params.get('reelId');
+      const path = window.location.pathname.replace('/', '');
 
-    const validTabs = ['home', 'search', 'reels', 'premium', 'library'];
-    if (path !== 'player') {
-      if (validTabs.includes(path)) {
-        setActiveTab(path as any);
-      } else if (path === '') {
-        setActiveTab('home');
-      }
-    }
-
-    if (songId && songs.length > 0) {
-      const id = isNaN(Number(songId)) ? songId : parseInt(songId);
-      if (currentSongIndex !== id) {
-        const songExists = songs.some(s => s.id === id);
-        if (songExists) {
-          setCurrentSongIndex(id);
+      if (id) {
+        const numericId = isNaN(Number(id)) ? id : parseInt(id);
+        if (path === 'reel' || appState.page === 'reels') {
+          setSelectedReelId(numericId);
+          navigateTo({ page: 'reels', id: numericId }, true);
+        } else {
+          setCurrentSongIndex(numericId);
+          navigateTo({ player: 'fullscreen', id: numericId }, true);
         }
       }
+      setHasHandledDeepLink(true);
     }
-
-    if (reelId && songs.length > 0) {
-      const id = isNaN(Number(reelId)) ? reelId : parseInt(reelId);
-      if (selectedReelId !== id) {
-        setSelectedReelId(id);
-        // Scroll to reel if needed
-        setTimeout(() => {
-          const reelElement = document.getElementById(`reel-${id}`);
-          if (reelElement) {
-            reelElement.scrollIntoView({ behavior: 'smooth' });
-          }
-        }, 500);
-      }
-    }
-  }, [location.pathname, location.search, songs.length]);
-
-  useEffect(() => {
-    let targetPath = activeTab === 'home' ? '' : activeTab;
-    
-    if (isPlayerExpanded) {
-      targetPath = 'player';
-    }
-
-    const newParams = new URLSearchParams();
-    if (currentSongIndex !== null) {
-      newParams.set('songId', currentSongIndex.toString());
-    }
-    
-    if (activeTab === 'reels' && selectedReelId !== null) {
-      newParams.set('reelId', selectedReelId.toString());
-    }
-
-    const targetUrl = `/${targetPath}${newParams.toString() ? '?' + newParams.toString() : ''}`;
-    
-    if (location.pathname + location.search !== targetUrl) {
-      // Use push to allow back button to work, except for initial load
-      navigate(targetUrl, { replace: !hasHandledDeepLink });
-      if (!hasHandledDeepLink) {
-        setHasHandledDeepLink(true);
-      }
-    }
-  }, [activeTab, isPlayerExpanded, currentSongIndex, selectedReelId, navigate, location.pathname, location.search, songs]);
+  }, [songs.length, hasHandledDeepLink]);
 
   useEffect(() => {
     if (isPlayerExpanded && syncedLyrics.length > 0 && lyricsContainerRef.current) {
@@ -313,7 +381,7 @@ export default function App() {
   }, [progress, isPlayerExpanded, syncedLyrics]);
   
   useEffect(() => {
-    if (activeTab === 'reels') {
+    if (appState.page === 'reels') {
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
@@ -327,7 +395,8 @@ export default function App() {
               // Update selectedReelId when it becomes visible
               const reelId = Object.keys(videoRefs.current).find(key => videoRefs.current[key] === video);
               if (reelId) {
-                setSelectedReelId(Number(reelId));
+                const numericId = isNaN(Number(reelId)) ? reelId : Number(reelId);
+                setSelectedReelId(numericId);
               }
             } else {
               video.pause();
@@ -353,12 +422,12 @@ export default function App() {
         observer.disconnect();
       };
     }
-  }, [activeTab, songs]);
+  }, [appState.page, songs]);
 
   // Handle strict 1-item scroll for reels
   useEffect(() => {
     const container = reelsContainerRef.current;
-    if (!container || activeTab !== 'reels') return;
+    if (!container || appState.page !== 'reels') return;
 
     let isScrolling = false;
     let scrollTimeout: NodeJS.Timeout;
@@ -408,7 +477,7 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       clearTimeout(scrollTimeout);
     };
-  }, [activeTab]);
+  }, [appState.page]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -570,7 +639,11 @@ export default function App() {
     }
     try {
       const formattedUrl = formatAudioUrl(song.url);
-      const response = await fetch(formattedUrl);
+      const proxyUrl = `/api/proxy-audio?url=${encodeURIComponent(formattedUrl)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download: ${response.statusText}`);
+      }
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -632,11 +705,11 @@ export default function App() {
 
 
   useEffect(() => {
-    if (activeTab === 'reels' && isPlaying) {
+    if (appState.page === 'reels' && isPlaying) {
       setIsPlaying(false);
       audioRef.current?.pause();
     }
-  }, [activeTab, isPlaying]);
+  }, [appState.page, isPlaying]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 2000);
@@ -794,7 +867,7 @@ export default function App() {
     } else {
       setCurrentSongIndex(index);
     }
-    setIsPlayerExpanded(true);
+    navigateTo({ player: 'fullscreen' });
   };
 
   const nextSong = () => {
@@ -930,22 +1003,36 @@ export default function App() {
 
       <nav className="flex-1 space-y-4">
         <button 
-          onClick={() => { setActiveTab('home'); if (!isPersistent) setIsSidebarOpen(false); }}
-          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'home' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+          onClick={() => { navigateTo({ page: 'home' }); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${appState.page === 'home' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
         >
           <Home size={24} />
           Home
         </button>
         <button 
-          onClick={() => { setActiveTab('library'); if (!isPersistent) setIsSidebarOpen(false); }}
-          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'library' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+          onClick={() => { navigateTo({ page: 'search' }); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${appState.page === 'search' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+        >
+          <Search size={24} />
+          Search
+        </button>
+        <button 
+          onClick={() => { navigateTo({ page: 'library' }); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${appState.page === 'library' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
         >
           <Heart size={24} />
           Liked Songs
         </button>
         <button 
-          onClick={() => { setActiveTab('premium'); if (!isPersistent) setIsSidebarOpen(false); }}
-          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${activeTab === 'premium' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+          onClick={() => { navigateTo({ page: 'reels' }); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${appState.page === 'reels' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
+        >
+          <Clapperboard size={24} />
+          Reels
+        </button>
+        <button 
+          onClick={() => { navigateTo({ page: 'premium' }); if (!isPersistent) setIsSidebarOpen(false); }}
+          className={`flex items-center gap-4 w-full text-left font-bold text-lg transition-colors ${appState.page === 'premium' ? 'text-spotify-green' : 'hover:text-spotify-green'}`}
         >
           <Music size={24} />
           Premium
@@ -975,17 +1062,17 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (activeTab === 'reels' && selectedReelId !== null && reelsContainerRef.current) {
-      // Use a small timeout to ensure the DOM is ready
-      setTimeout(() => {
+    if (appState.page === 'reels' && selectedReelId !== null && reelsContainerRef.current) {
+      // Use a small timeout to ensure the DOM is ready and reelSongs are rendered
+      const timer = setTimeout(() => {
         const reelElement = document.getElementById(`reel-${selectedReelId}`);
         if (reelElement) {
           reelElement.scrollIntoView({ behavior: 'auto', block: 'start' });
         }
-        setSelectedReelId(null);
-      }, 100);
+      }, 150);
+      return () => clearTimeout(timer);
     }
-  }, [activeTab, selectedReelId]);
+  }, [appState.page, selectedReelId, reelSongs.length]);
 
 
 
@@ -1010,11 +1097,11 @@ export default function App() {
 
       {/* Main Scrollable Area */}
       <main className={`flex-1 h-full relative ${
-        (activeTab === 'premium' && showPremiumFrame) || activeTab === 'reels' 
+        (appState.page === 'premium' && showPremiumFrame) || appState.page === 'reels' 
           ? 'overflow-hidden' 
           : 'overflow-y-auto pb-40'
       } scrollbar-hide`}>
-        {activeTab === 'home' ? (
+        {appState.page === 'home' ? (
           <div className="p-4 pt-6">
             {/* Top Bar */}
             <header className="flex items-center justify-between mb-6">
@@ -1095,7 +1182,10 @@ export default function App() {
             {/* Jump back in */}
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Jump back in</h2>
-              <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
+              <div 
+                onWheel={handleHorizontalScroll}
+                className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
+              >
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="min-w-[160px] max-w-[160px] space-y-3">
@@ -1131,13 +1221,16 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
                   <button 
-                    onClick={() => setActiveTab('reels')}
+                    onClick={() => navigateTo({ page: 'reels' })}
                     className="text-spotify-gray hover:text-white text-sm font-bold transition-colors"
                   >
                     Show all
                   </button>
                 </div>
-                <div className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4">
+                <div 
+                  onWheel={handleHorizontalScroll}
+                  className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4"
+                >
                   {loading ? (
                     Array.from({ length: 4 }).map((_, i) => (
                       <Skeleton key={i} className="min-w-[120px] max-w-[120px] aspect-[9/16] shrink-0" />
@@ -1147,8 +1240,7 @@ export default function App() {
                       <div 
                         key={i} 
                         onClick={() => {
-                          setSelectedReelId(reel.id);
-                          setActiveTab('reels');
+                          navigateTo({ page: 'reels', id: reel.id.toString(), previousPage: 'home' });
                         }}
                         className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
                       >
@@ -1174,7 +1266,10 @@ export default function App() {
             {/* Albums featuring songs you like */}
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Albums featuring songs you like</h2>
-              <div className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4">
+              <div 
+                onWheel={handleHorizontalScroll}
+                className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
+              >
                 {songs.filter(s => !s.isReel && !s.isApiSong).slice().reverse().map((song, i) => (
                   <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer">
                     <div className="relative aspect-square mb-3">
@@ -1187,7 +1282,7 @@ export default function App() {
               </div>
             </section>
           </div>
-        ) : activeTab === 'search' ? (
+        ) : appState.page === 'search' ? (
           <div className="p-4 pt-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-4">
@@ -1310,7 +1405,7 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : activeTab === 'reels' ? (
+        ) : appState.page === 'reels' ? (
           <div 
             ref={reelsContainerRef}
             className="h-full w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide relative"
@@ -1466,7 +1561,7 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : activeTab === 'library' ? (
+        ) : appState.page === 'library' ? (
           <div className="p-4 pt-6">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-4">
@@ -1594,8 +1689,7 @@ export default function App() {
                         <div 
                           key={reel.id} 
                           onClick={() => {
-                            setSelectedReelId(reel.id);
-                            setActiveTab('reels');
+                            navigateTo({ page: 'reels', id: reel.id.toString(), previousPage: 'library' });
                           }}
                           className="aspect-[9/16] relative rounded-md overflow-hidden cursor-pointer group"
                         >
@@ -1885,7 +1979,7 @@ export default function App() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
               className="bg-[#282828] rounded-lg p-2 flex items-center justify-between shadow-2xl pointer-events-auto mb-2 lg:mb-4 lg:mx-4 relative overflow-hidden touch-none"
-              onClick={() => setIsPlayerExpanded(true)}
+              onClick={() => navigateTo({ player: 'fullscreen' })}
               drag="y"
               dragConstraints={{ top: 0, bottom: 0 }}
               dragElastic={0.2}
@@ -1974,7 +2068,7 @@ export default function App() {
 
               <div className="max-w-md mx-auto w-full flex flex-col h-full min-h-[700px] relative z-10">
                 <header className="flex items-center justify-between mb-8">
-                  <button onClick={() => setIsPlayerExpanded(false)} className="text-white">
+                  <button onClick={() => navigateTo({ player: 'mini' })} className="text-white">
                     <ChevronDown size={32} />
                   </button>
                   <div className="flex flex-col items-center">
@@ -2251,57 +2345,57 @@ export default function App() {
         {/* Bottom Navigation */}
         <nav className="bg-black/90 backdrop-blur-md rounded-2xl flex items-center justify-around py-3 pointer-events-auto border border-white/5 lg:hidden">
           <button 
-            onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'home' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+            onClick={() => navigateTo({ page: 'home' })}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${appState.page === 'home' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
           >
             <Home 
               size={24} 
-              strokeWidth={activeTab === 'home' ? 3 : 2}
+              strokeWidth={appState.page === 'home' ? 3 : 2}
             />
-            <span className={`text-[10px] ${activeTab === 'home' ? 'font-bold' : 'font-medium'}`}>Home</span>
+            <span className={`text-[10px] ${appState.page === 'home' ? 'font-bold' : 'font-medium'}`}>Home</span>
           </button>
           <button 
-            onClick={() => setActiveTab('search')}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'search' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+            onClick={() => navigateTo({ page: 'search' })}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${appState.page === 'search' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
           >
             <Search 
               size={24} 
-              strokeWidth={activeTab === 'search' ? 3 : 2}
+              strokeWidth={appState.page === 'search' ? 3 : 2}
             />
-            <span className={`text-[10px] ${activeTab === 'search' ? 'font-bold' : 'font-medium'}`}>Search</span>
+            <span className={`text-[10px] ${appState.page === 'search' ? 'font-bold' : 'font-medium'}`}>Search</span>
           </button>
           <button 
-            onClick={() => setActiveTab('reels')}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'reels' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+            onClick={() => navigateTo({ page: 'reels' })}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${appState.page === 'reels' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
           >
             <Clapperboard 
               size={24} 
-              strokeWidth={activeTab === 'reels' ? 3 : 2}
+              strokeWidth={appState.page === 'reels' ? 3 : 2}
             />
-            <span className={`text-[10px] ${activeTab === 'reels' ? 'font-bold' : 'font-medium'}`}>Reels</span>
+            <span className={`text-[10px] ${appState.page === 'reels' ? 'font-bold' : 'font-medium'}`}>Reels</span>
           </button>
           <button 
-            onClick={() => setActiveTab('premium')}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'premium' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+            onClick={() => navigateTo({ page: 'premium' })}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${appState.page === 'premium' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
           >
             <Music 
               size={24} 
-              strokeWidth={activeTab === 'premium' ? 3 : 2}
+              strokeWidth={appState.page === 'premium' ? 3 : 2}
             />
-            <span className={`text-[10px] ${activeTab === 'premium' ? 'font-bold' : 'font-medium'}`}>Premium</span>
+            <span className={`text-[10px] ${appState.page === 'premium' ? 'font-bold' : 'font-medium'}`}>Premium</span>
           </button>
           <button 
-            onClick={() => setActiveTab('library')}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${activeTab === 'library' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
+            onClick={() => navigateTo({ page: 'library' })}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${appState.page === 'library' ? 'text-white scale-110' : 'text-spotify-gray hover:text-white'}`}
           >
             <div className="relative">
               <Heart 
                 size={24} 
-                strokeWidth={activeTab === 'library' ? 3 : 2}
-                className={activeTab === 'library' ? 'fill-spotify-green text-spotify-green' : ''}
+                strokeWidth={appState.page === 'library' ? 3 : 2}
+                className={appState.page === 'library' ? 'fill-spotify-green text-spotify-green' : ''}
               />
             </div>
-            <span className={`text-[10px] ${activeTab === 'library' ? 'font-bold' : 'font-medium'}`}>Library</span>
+            <span className={`text-[10px] ${appState.page === 'library' ? 'font-bold' : 'font-medium'}`}>Library</span>
           </button>
         </nav>
       </div>
