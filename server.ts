@@ -2,24 +2,11 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Readable } from "stream";
-import yts from "yt-search";
-import * as play from "play-dl";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
-  console.log("Starting server initialization...");
-  
-  // play-dl needs this sometimes to avoid early 429s
-  try {
-    await play.getFreeToken();
-    console.log("play-dl free token obtained");
-  } catch (e) {
-    console.warn("Failed to get play-dl free token:", e);
-  }
-
   const app = express();
   const PORT = 3000;
 
@@ -34,78 +21,15 @@ async function startServer() {
       if (!query) {
         return res.status(400).json({ error: "Query is required" });
       }
-      console.log(`Searching for: ${query}`);
-      const apiUrl = `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`;
-      const response = await fetch(apiUrl);
+      const response = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
       if (!response.ok) {
-        console.error(`API error: ${response.status} ${response.statusText}`);
         throw new Error(`API responded with status: ${response.status}`);
       }
       const data = await response.json();
-      console.log(`Found ${data.data?.results?.length || 0} results`);
       res.json(data);
     } catch (error) {
       console.error("Search proxy error:", error);
       res.status(500).json({ error: "Failed to fetch songs" });
-    }
-  });
-
-  app.get("/api/youtube/search", async (req, res) => {
-    try {
-      const query = req.query.q as string;
-      if (!query) {
-        return res.status(400).json({ error: "Query is required" });
-      }
-      console.log(`YouTube Searching for: ${query}`);
-      
-      // Use play-dl for search as well, it's often more robust
-      const results = await play.search(query, {
-        limit: 15,
-        source: { youtube: 'video' }
-      });
-      
-      const songs = results.map(video => ({
-        id: video.id,
-        title: video.title,
-        artist: video.channel?.name || 'Unknown Artist',
-        cover: video.thumbnails[0]?.url,
-        url: `/api/youtube/stream?id=${video.id}`,
-        isApiSong: true,
-        source: 'youtube'
-      }));
-      res.json({ data: { results: songs } });
-    } catch (error) {
-      console.error("YouTube search error:", error);
-      res.status(500).json({ error: "Failed to search YouTube" });
-    }
-  });
-
-  app.get("/api/youtube/stream", async (req, res) => {
-    try {
-      const videoId = req.query.id as string;
-      if (!videoId) {
-        return res.status(400).send("Video ID is required");
-      }
-      
-      console.log(`Streaming YouTube video with play-dl: ${videoId}`);
-      
-      // Get stream with some extra options for compatibility
-      const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const stream = await play.stream(videoUrl, {
-        quality: 2, // highest audio
-        discordPlayerCompatibility: true
-      });
-      
-      res.setHeader("Content-Type", "audio/mpeg");
-      stream.stream.pipe(res);
-    } catch (error: any) {
-      console.error("YouTube stream error (play-dl):", error.message || error);
-      const msg = error.message || "";
-      if (msg.includes('429') || msg.includes('Too Many Requests')) {
-        res.status(429).send("YouTube is rate-limiting this request. This is a common issue in cloud environments. Please try again in a few minutes.");
-      } else {
-        res.status(500).send(`Failed to stream YouTube audio: ${msg}`);
-      }
     }
   });
 
@@ -131,6 +55,7 @@ async function startServer() {
       }
 
       if (response.body) {
+        const { Readable } = require('stream');
         const body = Readable.fromWeb(response.body as any);
         body.pipe(res);
       } else {

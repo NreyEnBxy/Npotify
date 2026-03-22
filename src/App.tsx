@@ -133,7 +133,6 @@ interface Song {
   isReel?: boolean;
   lyrics?: string;
   isApiSong?: boolean;
-  source?: 'jiosaavn' | 'youtube';
 }
 
 interface User {
@@ -152,15 +151,12 @@ interface AppState {
 
 const fetchApiSongs = async (query: string): Promise<Song[]> => {
   try {
-    console.log(`Fetching JioSaavn songs for: ${query}`);
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) {
-      console.error(`JioSaavn search failed: ${res.status}`);
-      return [];
+      throw new Error(`API responded with status: ${res.status}`);
     }
     const data = await res.json();
-    console.log(`JioSaavn search returned ${data.data?.results?.length || 0} results`);
-    if (data && data.data && Array.isArray(data.data.results)) {
+    if (data.data && Array.isArray(data.data.results)) {
       return data.data.results.map((song: any) => {
         const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
         const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
@@ -170,36 +166,12 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
           artist: song.primaryArtists,
           cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
           url: highestQualityDownload?.link || "",
-          isApiSong: true,
-          source: 'jiosaavn'
+          isApiSong: true
         };
       }).filter((s: Song) => s.url !== "");
     }
   } catch (err) {
-    console.error("Failed to fetch JioSaavn songs", err);
-  }
-  return [];
-};
-
-const fetchYouTubeSongs = async (query: string): Promise<Song[]> => {
-  try {
-    console.log(`Fetching YouTube songs for: ${query}`);
-    const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) {
-      console.error(`YouTube search failed: ${res.status}`);
-      return [];
-    }
-    const data = await res.json();
-    console.log(`YouTube search returned ${data.data?.results?.length || 0} results`);
-    if (data && data.data && Array.isArray(data.data.results)) {
-      return data.data.results.map((song: any) => ({
-        ...song,
-        isApiSong: true,
-        source: 'youtube'
-      }));
-    }
-  } catch (err) {
-    console.error("Failed to fetch YouTube songs", err);
+    console.error("Failed to fetch API songs", err);
   }
   return [];
 };
@@ -347,19 +319,7 @@ export default function App() {
   const [selectedReelId, setSelectedReelId] = useState<number | string | null>(null);
   const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyric[]>([]);
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
-  const [topSongs, setTopSongs] = useState<Song[]>([]);
-  const [recommendedSongs, setRecommendedSongs] = useState<Song[]>([]);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-
-  const topArtists = useMemo(() => {
-    const artists = new Set<string>();
-    topSongs.forEach(s => {
-      // Split by comma or & if multiple artists
-      const mainArtist = s.artist.split(/[,&]/)[0].trim();
-      artists.add(mainArtist);
-    });
-    return Array.from(artists).slice(0, 8);
-  }, [topSongs]);
 
   const reelSongs = useMemo(() => {
     const filtered = songs.filter(s => s.isReel);
@@ -826,50 +786,6 @@ export default function App() {
             return added ? newSongs : prev;
           });
         });
-
-        // Fetch Top Music This Week (Spotify Top Hits)
-        fetchApiSongs("Spotify Top Hits").then(apiSongs => {
-          setTopSongs(apiSongs.slice(0, 10));
-          // Also add to global songs list if not present
-          setSongs(prev => {
-            const newSongs = [...prev];
-            let added = false;
-            apiSongs.forEach(apiSong => {
-              const exists = newSongs.some(s => 
-                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
-                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
-              );
-              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
-                newSongs.push(apiSong);
-                added = true;
-              }
-            });
-            return added ? newSongs : prev;
-          });
-        });
-
-        // Fetch Recommended Songs (Travis Scott, Playboi Carti, Lil Uzi Vert vibe)
-        const vibeArtists = ["Travis Scott", "Playboi Carti", "Lil Uzi Vert", "Future", "Metro Boomin"];
-        const randomArtist = vibeArtists[Math.floor(Math.random() * vibeArtists.length)];
-        fetchApiSongs(randomArtist).then(apiSongs => {
-          setRecommendedSongs(apiSongs.slice(0, 10));
-          // Also add to global songs list
-          setSongs(prev => {
-            const newSongs = [...prev];
-            let added = false;
-            apiSongs.forEach(apiSong => {
-              const exists = newSongs.some(s => 
-                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
-                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
-              );
-              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
-                newSongs.push(apiSong);
-                added = true;
-              }
-            });
-            return added ? newSongs : prev;
-          });
-        });
       } catch (error: any) {
         console.error("Error fetching songs:", error);
         showToast("Error fetching songs: " + error.message, 'error');
@@ -1029,14 +945,10 @@ export default function App() {
   const currentSong = currentSongIndex !== null ? songs.find(s => s.id === currentSongIndex) || null : null;
 
   useEffect(() => {
-    if (searchQuery.length > 1) {
+    if (searchQuery.length > 2) {
       setApiSearchLoading(true);
       const timer = setTimeout(() => {
-        console.log(`Triggering API search for: ${searchQuery}`);
-        Promise.all([fetchApiSongs(searchQuery), fetchYouTubeSongs(searchQuery)]).then(([jioSongs, ytSongs]) => {
-          const apiSongs = [...jioSongs, ...ytSongs];
-          console.log(`Search results for "${searchQuery}": JioSaavn=${jioSongs.length}, YouTube=${ytSongs.length}`);
-          
+        fetchApiSongs(searchQuery).then(apiSongs => {
           setSongs(prev => {
             const newSongs = [...prev];
             let added = false;
@@ -1052,9 +964,6 @@ export default function App() {
             });
             return added ? newSongs : prev;
           });
-          setApiSearchLoading(false);
-        }).catch(err => {
-          console.error("Search failed", err);
           setApiSearchLoading(false);
         });
       }, 500);
@@ -1316,98 +1225,6 @@ export default function App() {
                 )}
               </div>
             </section>
-
-            {/* Top Music This Week */}
-            {topSongs.length > 0 && (
-              <section className="mb-8">
-                <h2 className="text-2xl font-bold mb-4 tracking-tight">Top Music This Week</h2>
-                <div 
-                  onWheel={handleHorizontalScroll}
-                  className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
-                >
-                  {topSongs.map((song, i) => (
-                    <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
-                      <div className="relative aspect-square mb-3">
-                        <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
-                        <div className="absolute top-2 right-2 w-6 h-6 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center text-[10px] font-bold text-white border border-white/10">
-                          #{i + 1}
-                        </div>
-                      </div>
-                      <h3 className="font-bold text-sm truncate">{song.title}</h3>
-                      <p className="text-spotify-gray text-xs mt-1 line-clamp-1">
-                        Trending • {song.artist}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Songs You May Like */}
-            {recommendedSongs.length > 0 && (
-              <section className="mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-2xl font-bold tracking-tight">Songs You May Like</h2>
-                  <div className="bg-spotify-green/20 text-spotify-green text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    For You
-                  </div>
-                </div>
-                <div 
-                  onWheel={handleHorizontalScroll}
-                  className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
-                >
-                  {recommendedSongs.map((song, i) => (
-                    <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
-                      <div className="relative aspect-square mb-3">
-                        <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors rounded-md" />
-                        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="w-10 h-10 bg-spotify-green rounded-full flex items-center justify-center shadow-xl">
-                            <Play size={20} className="text-black fill-black ml-1" />
-                          </div>
-                        </div>
-                      </div>
-                      <h3 className="font-bold text-sm truncate">{song.title}</h3>
-                      <p className="text-spotify-gray text-xs mt-1 line-clamp-1">
-                        {song.artist}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Top Artists */}
-            {topArtists.length > 0 && (
-              <section className="mb-8">
-                <h2 className="text-2xl font-bold mb-4 tracking-tight">Top Artists</h2>
-                <div 
-                  onWheel={handleHorizontalScroll}
-                  className="flex overflow-x-auto gap-6 scrollbar-hide -mx-4 px-4"
-                >
-                  {topArtists.map((artist, i) => (
-                    <div 
-                      key={i} 
-                      onClick={() => {
-                        setSearchQuery(artist);
-                        navigateTo({ page: 'search' });
-                      }}
-                      className="flex flex-col items-center gap-3 min-w-[120px] cursor-pointer group"
-                    >
-                      <div className="w-28 h-28 rounded-full overflow-hidden shadow-xl border border-white/5 group-hover:scale-105 transition-transform duration-300">
-                        <img 
-                          src={`https://picsum.photos/seed/${artist}/200/200`} 
-                          className="w-full h-full object-cover" 
-                          alt={artist}
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                      <span className="text-sm font-bold text-center truncate w-full">{artist}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
 
             {/* Albums featuring songs you like */}
             <section className="mb-8">
@@ -2555,8 +2372,8 @@ export default function App() {
           }
         }}
         onError={(e) => {
-          console.error("Audio playback error: Source failed to load or decode");
-          showToast("Playback failed. This song might be unavailable.", 'error');
+          console.error("Audio playback error:", e);
+          // You could add a state here to show a toast or error message in the UI
         }}
         onEnded={() => {
           if (repeatMode === 'one') {
