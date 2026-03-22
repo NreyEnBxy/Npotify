@@ -215,8 +215,15 @@ export default function App() {
 
     // Rule: From any main section -> Back -> Home
     // We achieve this by replacing the current main section in history instead of pushing a new one
-    const isMainSection = (p: string) => ['library', 'reels', 'search', 'premium'].includes(p);
+    const isMainSection = (p: string) => ['library', 'reels', 'search', 'premium', 'home'].includes(p);
     const shouldReplace = replace || (isMainSection(updatedState.page) && isMainSection(appState.page));
+
+    // Clear ID when switching main sections unless explicitly provided
+    if (isMainSection(updatedState.page) && updatedState.page !== appState.page) {
+      if (!newState.hasOwnProperty('id')) {
+        updatedState.id = null;
+      }
+    }
 
     setAppState(updatedState);
     
@@ -312,9 +319,30 @@ export default function App() {
   const [selectedReelId, setSelectedReelId] = useState<number | string | null>(null);
   const [syncedLyrics, setSyncedLyrics] = useState<SyncedLyric[]>([]);
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
+  const [topSongs, setTopSongs] = useState<Song[]>([]);
+  const [recommendedSongs, setRecommendedSongs] = useState<Song[]>([]);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
-  const reelSongs = useMemo(() => songs.filter(s => s.isReel), [songs]);
+  const topArtists = useMemo(() => {
+    const artists = new Set<string>();
+    topSongs.forEach(s => {
+      // Split by comma or & if multiple artists
+      const mainArtist = s.artist.split(/[,&]/)[0].trim();
+      artists.add(mainArtist);
+    });
+    return Array.from(artists).slice(0, 8);
+  }, [topSongs]);
+
+  const reelSongs = useMemo(() => {
+    const filtered = songs.filter(s => s.isReel);
+    // Fisher-Yates shuffle for better randomness
+    const shuffled = [...filtered];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }, [songs]);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -392,12 +420,7 @@ export default function App() {
                   console.log("Auto-play blocked:", err);
                 }
               });
-              // Update selectedReelId when it becomes visible
-              const reelId = Object.keys(videoRefs.current).find(key => videoRefs.current[key] === video);
-              if (reelId) {
-                const numericId = isNaN(Number(reelId)) ? reelId : Number(reelId);
-                setSelectedReelId(numericId);
-              }
+              // We no longer update the URL automatically as the user scrolls
             } else {
               video.pause();
             }
@@ -763,6 +786,50 @@ export default function App() {
             let added = false;
             apiSongs.forEach(apiSong => {
               // Check if song already exists by title and artist (case-insensitive)
+              const exists = newSongs.some(s => 
+                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
+                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
+              );
+              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
+                newSongs.push(apiSong);
+                added = true;
+              }
+            });
+            return added ? newSongs : prev;
+          });
+        });
+
+        // Fetch Top Music This Week (Spotify Top Hits)
+        fetchApiSongs("Spotify Top Hits").then(apiSongs => {
+          setTopSongs(apiSongs.slice(0, 10));
+          // Also add to global songs list if not present
+          setSongs(prev => {
+            const newSongs = [...prev];
+            let added = false;
+            apiSongs.forEach(apiSong => {
+              const exists = newSongs.some(s => 
+                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
+                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
+              );
+              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
+                newSongs.push(apiSong);
+                added = true;
+              }
+            });
+            return added ? newSongs : prev;
+          });
+        });
+
+        // Fetch Recommended Songs (Travis Scott, Playboi Carti, Lil Uzi Vert vibe)
+        const vibeArtists = ["Travis Scott", "Playboi Carti", "Lil Uzi Vert", "Future", "Metro Boomin"];
+        const randomArtist = vibeArtists[Math.floor(Math.random() * vibeArtists.length)];
+        fetchApiSongs(randomArtist).then(apiSongs => {
+          setRecommendedSongs(apiSongs.slice(0, 10));
+          // Also add to global songs list
+          setSongs(prev => {
+            const newSongs = [...prev];
+            let added = false;
+            apiSongs.forEach(apiSong => {
               const exists = newSongs.some(s => 
                 s.title.toLowerCase() === apiSong.title.toLowerCase() && 
                 s.artist.toLowerCase() === apiSong.artist.toLowerCase()
@@ -1215,50 +1282,94 @@ export default function App() {
               </div>
             </section>
 
-            {/* Reels on Home */}
-            {(loading || reelSongs.length > 0) && (
+            {/* Top Music This Week */}
+            {topSongs.length > 0 && (
               <section className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
-                  <button 
-                    onClick={() => navigateTo({ page: 'reels' })}
-                    className="text-spotify-gray hover:text-white text-sm font-bold transition-colors"
-                  >
-                    Show all
-                  </button>
+                <h2 className="text-2xl font-bold mb-4 tracking-tight">Top Music This Week</h2>
+                <div 
+                  onWheel={handleHorizontalScroll}
+                  className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
+                >
+                  {topSongs.map((song, i) => (
+                    <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
+                      <div className="relative aspect-square mb-3">
+                        <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
+                        <div className="absolute top-2 right-2 w-6 h-6 bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center text-[10px] font-bold text-white border border-white/10">
+                          #{i + 1}
+                        </div>
+                      </div>
+                      <h3 className="font-bold text-sm truncate">{song.title}</h3>
+                      <p className="text-spotify-gray text-xs mt-1 line-clamp-1">
+                        Trending • {song.artist}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Songs You May Like */}
+            {recommendedSongs.length > 0 && (
+              <section className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="text-2xl font-bold tracking-tight">Songs You May Like</h2>
+                  <div className="bg-spotify-green/20 text-spotify-green text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    For You
+                  </div>
                 </div>
                 <div 
                   onWheel={handleHorizontalScroll}
-                  className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4"
+                  className="flex overflow-x-auto gap-4 scrollbar-hide -mx-4 px-4"
                 >
-                  {loading ? (
-                    Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="min-w-[120px] max-w-[120px] aspect-[9/16] shrink-0" />
-                    ))
-                  ) : (
-                    reelSongs.map((reel, i) => (
-                      <div 
-                        key={i} 
-                        onClick={() => {
-                          navigateTo({ page: 'reels', id: reel.id.toString(), previousPage: 'home' });
-                        }}
-                        className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
-                      >
-                        <img 
-                          src={reel.cover} 
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
-                          referrerPolicy="no-referrer" 
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-2">
-                          <div className="flex items-center gap-1 mb-1">
-                            <Clapperboard size={12} className="text-white" />
-                            <span className="text-[10px] font-bold text-white truncate">{reel.artist}</span>
+                  {recommendedSongs.map((song, i) => (
+                    <div key={i} onClick={() => playSong(song.id)} className="min-w-[160px] max-w-[160px] cursor-pointer group">
+                      <div className="relative aspect-square mb-3">
+                        <img src={song.cover} className="w-full h-full object-cover rounded-md shadow-lg aspect-square" referrerPolicy="no-referrer" />
+                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors rounded-md" />
+                        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="w-10 h-10 bg-spotify-green rounded-full flex items-center justify-center shadow-xl">
+                            <Play size={20} className="text-black fill-black ml-1" />
                           </div>
-                          <h3 className="text-[10px] text-white/80 line-clamp-1">{reel.title}</h3>
                         </div>
                       </div>
-                    ))
-                  )}
+                      <h3 className="font-bold text-sm truncate">{song.title}</h3>
+                      <p className="text-spotify-gray text-xs mt-1 line-clamp-1">
+                        {song.artist}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Top Artists */}
+            {topArtists.length > 0 && (
+              <section className="mb-8">
+                <h2 className="text-2xl font-bold mb-4 tracking-tight">Top Artists</h2>
+                <div 
+                  onWheel={handleHorizontalScroll}
+                  className="flex overflow-x-auto gap-6 scrollbar-hide -mx-4 px-4"
+                >
+                  {topArtists.map((artist, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => {
+                        setSearchQuery(artist);
+                        navigateTo({ page: 'search' });
+                      }}
+                      className="flex flex-col items-center gap-3 min-w-[120px] cursor-pointer group"
+                    >
+                      <div className="w-28 h-28 rounded-full overflow-hidden shadow-xl border border-white/5 group-hover:scale-105 transition-transform duration-300">
+                        <img 
+                          src={`https://picsum.photos/seed/${artist}/200/200`} 
+                          className="w-full h-full object-cover" 
+                          alt={artist}
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      <span className="text-sm font-bold text-center truncate w-full">{artist}</span>
+                    </div>
+                  ))}
                 </div>
               </section>
             )}
