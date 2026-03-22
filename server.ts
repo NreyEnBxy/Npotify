@@ -4,12 +4,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
 import yts from "yt-search";
-import play from "play-dl";
+import * as play from "play-dl";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
+  console.log("Starting server initialization...");
   const app = express();
   const PORT = 3000;
 
