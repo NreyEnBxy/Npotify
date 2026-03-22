@@ -3,6 +3,8 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
+import yts from "yt-search";
+import play from "play-dl";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +37,56 @@ async function startServer() {
     } catch (error) {
       console.error("Search proxy error:", error);
       res.status(500).json({ error: "Failed to fetch songs" });
+    }
+  });
+
+  app.get("/api/youtube/search", async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      if (!query) {
+        return res.status(400).json({ error: "Query is required" });
+      }
+      console.log(`YouTube Searching for: ${query}`);
+      const results = await yts(query + " music");
+      const songs = results.videos.slice(0, 15).map(video => ({
+        id: video.videoId,
+        title: video.title,
+        artist: video.author.name,
+        cover: video.thumbnail,
+        url: `/api/youtube/stream?id=${video.videoId}`,
+        isApiSong: true,
+        source: 'youtube'
+      }));
+      res.json({ data: { results: songs } });
+    } catch (error) {
+      console.error("YouTube search error:", error);
+      res.status(500).json({ error: "Failed to search YouTube" });
+    }
+  });
+
+  app.get("/api/youtube/stream", async (req, res) => {
+    try {
+      const videoId = req.query.id as string;
+      if (!videoId) {
+        return res.status(400).send("Video ID is required");
+      }
+      
+      console.log(`Streaming YouTube video with play-dl: ${videoId}`);
+      
+      // play-dl is generally more resilient to 429s
+      const stream = await play.stream(`https://www.youtube.com/watch?v=${videoId}`, {
+        quality: 2 // highest audio
+      });
+      
+      res.setHeader("Content-Type", "audio/mpeg");
+      stream.stream.pipe(res);
+    } catch (error: any) {
+      console.error("YouTube stream error (play-dl):", error.message || error);
+      if (error.message?.includes('429')) {
+        res.status(429).send("YouTube is rate-limiting this request. Please try again later.");
+      } else {
+        res.status(500).send("Failed to stream YouTube audio");
+      }
     }
   });
 

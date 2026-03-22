@@ -133,6 +133,7 @@ interface Song {
   isReel?: boolean;
   lyrics?: string;
   isApiSong?: boolean;
+  source?: 'jiosaavn' | 'youtube';
 }
 
 interface User {
@@ -151,14 +152,14 @@ interface AppState {
 
 const fetchApiSongs = async (query: string): Promise<Song[]> => {
   try {
-    console.log(`Fetching API songs for: ${query}`);
+    console.log(`Fetching JioSaavn songs for: ${query}`);
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) {
-      console.error(`API search failed: ${res.status}`);
+      console.error(`JioSaavn search failed: ${res.status}`);
       return [];
     }
     const data = await res.json();
-    console.log(`API search returned ${data.data?.results?.length || 0} results`);
+    console.log(`JioSaavn search returned ${data.data?.results?.length || 0} results`);
     if (data && data.data && Array.isArray(data.data.results)) {
       return data.data.results.map((song: any) => {
         const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
@@ -169,12 +170,36 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
           artist: song.primaryArtists,
           cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
           url: highestQualityDownload?.link || "",
-          isApiSong: true
+          isApiSong: true,
+          source: 'jiosaavn'
         };
       }).filter((s: Song) => s.url !== "");
     }
   } catch (err) {
-    console.error("Failed to fetch API songs", err);
+    console.error("Failed to fetch JioSaavn songs", err);
+  }
+  return [];
+};
+
+const fetchYouTubeSongs = async (query: string): Promise<Song[]> => {
+  try {
+    console.log(`Fetching YouTube songs for: ${query}`);
+    const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) {
+      console.error(`YouTube search failed: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    console.log(`YouTube search returned ${data.data?.results?.length || 0} results`);
+    if (data && data.data && Array.isArray(data.data.results)) {
+      return data.data.results.map((song: any) => ({
+        ...song,
+        isApiSong: true,
+        source: 'youtube'
+      }));
+    }
+  } catch (err) {
+    console.error("Failed to fetch YouTube songs", err);
   }
   return [];
 };
@@ -1008,12 +1033,10 @@ export default function App() {
       setApiSearchLoading(true);
       const timer = setTimeout(() => {
         console.log(`Triggering API search for: ${searchQuery}`);
-        fetchApiSongs(searchQuery).then(apiSongs => {
-          console.log(`Search results for "${searchQuery}":`, apiSongs.length);
-          if (apiSongs.length === 0 && searchQuery.length > 2) {
-            // Only show toast if it's a longer query and still no results
-            // showToast("No results found from API", 'info');
-          }
+        Promise.all([fetchApiSongs(searchQuery), fetchYouTubeSongs(searchQuery)]).then(([jioSongs, ytSongs]) => {
+          const apiSongs = [...jioSongs, ...ytSongs];
+          console.log(`Search results for "${searchQuery}": JioSaavn=${jioSongs.length}, YouTube=${ytSongs.length}`);
+          
           setSongs(prev => {
             const newSongs = [...prev];
             let added = false;
@@ -1029,6 +1052,9 @@ export default function App() {
             });
             return added ? newSongs : prev;
           });
+          setApiSearchLoading(false);
+        }).catch(err => {
+          console.error("Search failed", err);
           setApiSearchLoading(false);
         });
       }, 500);
@@ -2529,8 +2555,8 @@ export default function App() {
           }
         }}
         onError={(e) => {
-          console.error("Audio playback error:", e);
-          // You could add a state here to show a toast or error message in the UI
+          console.error("Audio playback error: Source failed to load or decode");
+          showToast("Playback failed. This song might be unavailable.", 'error');
         }}
         onEnded={() => {
           if (repeatMode === 'one') {
