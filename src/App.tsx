@@ -151,12 +151,15 @@ interface AppState {
 
 const fetchApiSongs = async (query: string): Promise<Song[]> => {
   try {
+    console.log(`Fetching API songs for: ${query}`);
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) {
-      throw new Error(`API responded with status: ${res.status}`);
+      console.error(`API search failed: ${res.status}`);
+      return [];
     }
     const data = await res.json();
-    if (data.data && Array.isArray(data.data.results)) {
+    console.log(`API search returned ${data.data?.results?.length || 0} results`);
+    if (data && data.data && Array.isArray(data.data.results)) {
       return data.data.results.map((song: any) => {
         const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
         const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
@@ -1001,10 +1004,16 @@ export default function App() {
   const currentSong = currentSongIndex !== null ? songs.find(s => s.id === currentSongIndex) || null : null;
 
   useEffect(() => {
-    if (searchQuery.length > 2) {
+    if (searchQuery.length > 1) {
       setApiSearchLoading(true);
       const timer = setTimeout(() => {
+        console.log(`Triggering API search for: ${searchQuery}`);
         fetchApiSongs(searchQuery).then(apiSongs => {
+          console.log(`Search results for "${searchQuery}":`, apiSongs.length);
+          if (apiSongs.length === 0 && searchQuery.length > 2) {
+            // Only show toast if it's a longer query and still no results
+            // showToast("No results found from API", 'info');
+          }
           setSongs(prev => {
             const newSongs = [...prev];
             let added = false;

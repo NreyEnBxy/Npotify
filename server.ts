@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { Readable } from "stream";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,11 +22,15 @@ async function startServer() {
       if (!query) {
         return res.status(400).json({ error: "Query is required" });
       }
-      const response = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
+      console.log(`Searching for: ${query}`);
+      const apiUrl = `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`;
+      const response = await fetch(apiUrl);
       if (!response.ok) {
+        console.error(`API error: ${response.status} ${response.statusText}`);
         throw new Error(`API responded with status: ${response.status}`);
       }
       const data = await response.json();
+      console.log(`Found ${data.data?.results?.length || 0} results`);
       res.json(data);
     } catch (error) {
       console.error("Search proxy error:", error);
@@ -55,7 +60,6 @@ async function startServer() {
       }
 
       if (response.body) {
-        const { Readable } = require('stream');
         const body = Readable.fromWeb(response.body as any);
         body.pipe(res);
       } else {
