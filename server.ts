@@ -11,6 +11,15 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   console.log("Starting server initialization...");
+  
+  // play-dl needs this sometimes to avoid early 429s
+  try {
+    await play.getFreeToken();
+    console.log("play-dl free token obtained");
+  } catch (e) {
+    console.warn("Failed to get play-dl free token:", e);
+  }
+
   const app = express();
   const PORT = 3000;
 
@@ -48,13 +57,19 @@ async function startServer() {
         return res.status(400).json({ error: "Query is required" });
       }
       console.log(`YouTube Searching for: ${query}`);
-      const results = await yts(query + " music");
-      const songs = results.videos.slice(0, 15).map(video => ({
-        id: video.videoId,
+      
+      // Use play-dl for search as well, it's often more robust
+      const results = await play.search(query, {
+        limit: 15,
+        source: { youtube: 'video' }
+      });
+      
+      const songs = results.map(video => ({
+        id: video.id,
         title: video.title,
-        artist: video.author.name,
-        cover: video.thumbnail,
-        url: `/api/youtube/stream?id=${video.videoId}`,
+        artist: video.channel?.name || 'Unknown Artist',
+        cover: video.thumbnails[0]?.url,
+        url: `/api/youtube/stream?id=${video.id}`,
         isApiSong: true,
         source: 'youtube'
       }));
@@ -74,19 +89,22 @@ async function startServer() {
       
       console.log(`Streaming YouTube video with play-dl: ${videoId}`);
       
-      // play-dl is generally more resilient to 429s
-      const stream = await play.stream(`https://www.youtube.com/watch?v=${videoId}`, {
-        quality: 2 // highest audio
+      // Get stream with some extra options for compatibility
+      const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const stream = await play.stream(videoUrl, {
+        quality: 2, // highest audio
+        discordPlayerCompatibility: true
       });
       
       res.setHeader("Content-Type", "audio/mpeg");
       stream.stream.pipe(res);
     } catch (error: any) {
       console.error("YouTube stream error (play-dl):", error.message || error);
-      if (error.message?.includes('429')) {
-        res.status(429).send("YouTube is rate-limiting this request. Please try again later.");
+      const msg = error.message || "";
+      if (msg.includes('429') || msg.includes('Too Many Requests')) {
+        res.status(429).send("YouTube is rate-limiting this request. This is a common issue in cloud environments. Please try again in a few minutes.");
       } else {
-        res.status(500).send("Failed to stream YouTube audio");
+        res.status(500).send(`Failed to stream YouTube audio: ${msg}`);
       }
     }
   });
