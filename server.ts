@@ -22,11 +22,21 @@ async function startServer() {
       if (!query) {
         return res.status(400).json({ error: "Query is required" });
       }
-      const response = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        throw new Error(`API responded with status: ${response.status}`);
+
+      // Try primary API
+      let apiResponse = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
+      
+      // Fallback to another API if primary fails
+      if (!apiResponse.ok) {
+        console.warn("Primary search API failed, trying fallback...");
+        apiResponse = await fetch(`https://jiosaavn-api.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
       }
-      const data = await response.json();
+
+      if (!apiResponse.ok) {
+        throw new Error(`Both APIs responded with status: ${apiResponse.status}`);
+      }
+
+      const data = await apiResponse.json();
       res.json(data);
     } catch (error) {
       console.error("Search proxy error:", error);

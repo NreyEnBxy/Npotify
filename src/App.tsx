@@ -156,20 +156,68 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
       throw new Error(`API responded with status: ${res.status}`);
     }
     const data = await res.json();
+    
+    // Handle different possible response structures from various JioSaavn API forks
+    let results = [];
     if (data.data && Array.isArray(data.data.results)) {
-      return data.data.results.map((song: any) => {
-        const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
-        const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
-        return {
-          id: song.id,
-          title: song.name,
-          artist: song.primaryArtists,
-          cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
-          url: highestQualityDownload?.link || "",
-          isApiSong: true
-        };
-      }).filter((s: Song) => s.url !== "");
+      results = data.data.results;
+    } else if (data.data && Array.isArray(data.data)) {
+      results = data.data;
+    } else if (Array.isArray(data.results)) {
+      results = data.results;
+    } else if (Array.isArray(data)) {
+      results = data;
     }
+
+    return results.map((song: any) => {
+      // Find highest quality download link
+      const downloadUrl = song.downloadUrl || song.download_url || song.download_links;
+      let url = "";
+      if (Array.isArray(downloadUrl)) {
+        const highestQuality = downloadUrl.find((d: any) => d.quality === '320kbps') || downloadUrl[downloadUrl.length - 1];
+        url = highestQuality?.link || highestQuality?.url || "";
+      } else if (typeof downloadUrl === 'string') {
+        url = downloadUrl;
+      } else if (song.url) {
+        url = song.url;
+      }
+
+      // Find highest quality image link
+      const image = song.image || song.images || song.image_url;
+      let cover = "https://picsum.photos/seed/music/400/400";
+      if (Array.isArray(image)) {
+        const highestQuality = image.find((i: any) => i.quality === '500x500') || image[image.length - 1];
+        cover = highestQuality?.link || highestQuality?.url || cover;
+      } else if (typeof image === 'string') {
+        cover = image;
+      } else if (song.cover) {
+        cover = song.cover;
+      }
+      
+      // Handle artist being a string, an array of objects, or an array of strings
+      let artistName = "Unknown Artist";
+      const primaryArtists = song.primaryArtists || song.artist || song.artists?.primary || song.artists?.[0]?.name;
+      
+      if (typeof primaryArtists === 'string') {
+        artistName = primaryArtists;
+      } else if (Array.isArray(primaryArtists)) {
+        artistName = primaryArtists.map((a: any) => {
+          if (typeof a === 'string') return a;
+          return a.name || a.title || "Unknown";
+        }).join(", ");
+      } else if (primaryArtists && typeof primaryArtists === 'object') {
+        artistName = primaryArtists.name || primaryArtists.title || "Unknown Artist";
+      }
+
+      return {
+        id: song.id || Math.random().toString(36).substr(2, 9),
+        title: song.name || song.title || "Unknown Title",
+        artist: artistName,
+        cover: cover,
+        url: url,
+        isApiSong: true
+      };
+    }).filter((s: Song) => s.url !== "");
   } catch (err) {
     console.error("Failed to fetch API songs", err);
   }
@@ -1293,7 +1341,7 @@ export default function App() {
 
             {searchQuery ? (
               <div className="space-y-4">
-                {loading ? (
+                {loading || apiSearchLoading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <div key={i} className="flex items-center gap-3">
                       <Skeleton className="w-12 h-12 rounded" />
