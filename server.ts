@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
 import dotenv from "dotenv";
-import yts from "yt-search";
+import ytdl from "@distube/ytdl-core";
 
 dotenv.config();
 
@@ -20,162 +20,158 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  // YouTube Search API (using yt-search package - no key required)
-  app.get("/api/youtube/search", async (req, res) => {
+  // YouTube Audio Stream Proxy
+  app.get("/api/stream", async (req, res) => {
     try {
-      const query = req.query.q as string;
-      if (!query) {
-        return res.status(400).json({ error: "Query is required" });
-      }
-
-      const searchResults = await yts(query);
-      const videos = searchResults.videos.slice(0, 10);
-      
-      const results = videos.map((video: any) => ({
-        id: video.videoId,
-        title: video.title,
-        artist: video.author.name,
-        cover: video.thumbnail,
-        url: video.url,
-        isYouTube: true
-      }));
-
-      res.json({ results });
-    } catch (error: any) {
-      console.error("YouTube search error:", error);
-      res.status(500).json({ error: error.message || "Failed to search YouTube" });
-    }
-  });
-
-  app.get("/api/youtube/stream", async (req, res) => {
-    try {
-      const videoId = req.query.id as string;
-      if (!videoId) {
-        return res.status(400).send("Video ID is required");
-      }
-
-      // Use a public Piped instance to get the stream URL
-      // We'll try a few instances if one fails
-      const instances = [
-        "https://pipedapi.kavin.rocks",
-        "https://pipedapi.leptons.xyz",
-        "https://pipedapi.moomoo.me",
-        "https://pipedapi.rivo.gg",
-        "https://pipedapi.drgns.space",
-        "https://pipedapi.mha.fi",
-        "https://pipedapi.privacy.com.de",
-        "https://pipedapi.v-m-p.org",
-        "https://pipedapi.r4fo.com",
-        "https://pipedapi.reallyaweso.me"
-      ];
-
-      let streamData = null;
-      for (const instance of instances) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-
-          const response = await fetch(`${instance}/streams/${videoId}`, {
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-              streamData = await response.json();
-              if (streamData && streamData.audioStreams && streamData.audioStreams.length > 0) {
-                break;
-              }
-            } else {
-              console.error(`Non-JSON response from ${instance}:`, contentType);
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to fetch from ${instance}:`, e instanceof Error ? e.message : String(e));
-        }
-      }
-
-      if (!streamData || !streamData.audioStreams || streamData.audioStreams.length === 0) {
-        throw new Error("Failed to get audio stream from YouTube");
-      }
-
-      // Get the best quality audio stream
-      const audioStream = streamData.audioStreams.sort((a: any, b: any) => b.bitrate - a.bitrate)[0];
-      const streamUrl = audioStream.url;
-
-      // Proxy the stream
-      const response = await fetch(streamUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch stream: ${response.statusText}`);
-      }
-
-      const contentType = response.headers.get("content-type");
-      if (contentType) res.setHeader("Content-Type", contentType);
-      
-      const contentLength = response.headers.get("content-length");
-      if (contentLength) res.setHeader("Content-Length", contentLength);
-
-      if (response.body) {
-        const body = Readable.fromWeb(response.body as any);
-        body.pipe(res);
-      } else {
-        res.status(500).send("No body");
-      }
-    } catch (error: any) {
-      console.error("YouTube stream error:", error);
-      res.status(500).send(error.message || "Failed to stream YouTube audio");
-    }
-  });
-
-  app.get("/api/search", async (req, res) => {
-    try {
-      const query = req.query.q as string;
-      if (!query) {
-        return res.status(400).json({ error: "Query is required" });
-      }
-      const response = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        throw new Error(`API responded with status: ${response.status}`);
-      }
-      const data = await response.json();
-      res.json(data);
-    } catch (error) {
-      console.error("Search proxy error:", error);
-      res.status(500).json({ error: "Failed to fetch songs" });
-    }
-  });
-
-  app.get("/api/proxy-audio", async (req, res) => {
-    try {
-      const url = req.query.url as string;
-      if (!url) {
+      let videoUrl = req.query.url as string;
+      if (!videoUrl) {
         return res.status(400).send("URL is required");
       }
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio: ${response.statusText}`);
-      }
-      
-      const contentType = response.headers.get("content-type");
-      if (contentType) {
-        res.setHeader("Content-Type", contentType);
-      }
-      
-      const contentLength = response.headers.get("content-length");
-      if (contentLength) {
-        res.setHeader("Content-Length", contentLength);
+
+      // If it's just a video ID, convert it to a full URL
+      if (!videoUrl.includes('http') && videoUrl.length === 11) {
+        videoUrl = `https://www.youtube.com/watch?v=${videoUrl}`;
       }
 
-      if (response.body) {
-        const body = Readable.fromWeb(response.body as any);
-        body.pipe(res);
+      const commonHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.youtube.com/',
+        'Origin': 'https://www.youtube.com',
+        'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+      };
+
+      // If it's a YouTube link
+      if (ytdl.validateURL(videoUrl)) {
+        try {
+          // Get video info first to get direct stream URL
+          let info;
+          let retries = 2;
+          while (retries > 0) {
+            try {
+              info = await ytdl.getInfo(videoUrl, {
+                requestOptions: { headers: commonHeaders }
+              });
+              break;
+            } catch (err: any) {
+              retries--;
+              if (retries === 0 || !err.message?.includes('429')) throw err;
+              // Wait a bit before retrying on 429
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+          
+          if (!info) {
+            throw new Error("Failed to get video info");
+          }
+
+          if (info.videoDetails.isLiveContent) {
+            throw new Error("Live videos are not supported");
+          }
+          
+          const format = ytdl.chooseFormat(info.formats, { 
+            quality: 'highestaudio', 
+            filter: 'audioonly' 
+          });
+
+          if (!format || !format.url) {
+            throw new Error("No suitable audio format found");
+          }
+
+          // Set headers for the client
+          const mimeType = format.mimeType?.split(';')[0] || 'audio/mpeg';
+          res.setHeader('Content-Type', mimeType);
+          res.setHeader('Accept-Ranges', 'bytes');
+          if (format.contentLength) {
+            res.setHeader('Content-Length', format.contentLength);
+          }
+
+          // Stream the direct URL using ytdl's internal downloader
+          const stream = ytdl.downloadFromInfo(info, { 
+            format,
+            highWaterMark: 1 << 25, // 32MB buffer for fast start
+            requestOptions: { headers: commonHeaders }
+          });
+
+          stream.pipe(res);
+
+          stream.on('error', (err: any) => {
+            console.error("YTDL Stream error:", err);
+            if (!res.headersSent) {
+              res.status(500).send("Failed to stream audio: " + err.message);
+            } else {
+              res.end();
+            }
+          });
+        } catch (err: any) {
+          console.error("YTDL Setup error:", err);
+          if (err.message?.includes('429')) {
+            console.error("YouTube is rate-limiting this IP (429).");
+            if (!res.headersSent) {
+              return res.status(429).send("YouTube is rate-limiting the server. Please try again later.");
+            }
+          }
+          if (!res.headersSent) {
+            res.status(500).send("Failed to initialize stream: " + err.message);
+          }
+        }
       } else {
-        res.status(500).send("No body");
+        // For other links (Google Drive, Dropbox, direct links), stream them
+        let finalUrl = videoUrl;
+        
+        if (finalUrl.includes('drive.google.com')) {
+          const fileIdMatch = finalUrl.match(/\/d\/([^/]+)/) || finalUrl.match(/id=([^&]+)/);
+          if (fileIdMatch && fileIdMatch[1]) {
+            finalUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+          }
+        }
+        
+        if (finalUrl.includes('dropbox.com')) {
+          finalUrl = finalUrl.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('&dl=0', '');
+        }
+
+        const response = await fetch(finalUrl, { headers: commonHeaders });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch source: ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+        
+        const contentLength = response.headers.get('content-length');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        
+        res.setHeader('Accept-Ranges', 'bytes');
+
+        if (response.body) {
+          const reader = response.body.getReader();
+          const stream = new Readable({
+            async read() {
+              const { done, value } = await reader.read();
+              if (done) {
+                this.push(null);
+              } else {
+                this.push(Buffer.from(value));
+              }
+            }
+          });
+          stream.pipe(res);
+        } else {
+          res.status(500).send("No body in response");
+        }
       }
-    } catch (error) {
-      console.error("Audio proxy error:", error);
-      res.status(500).send("Failed to proxy audio");
+    } catch (error: any) {
+      console.error("Stream error:", error);
+      if (!res.headersSent) {
+        res.status(500).send(error.message || "Failed to stream audio");
+      }
     }
   });
 

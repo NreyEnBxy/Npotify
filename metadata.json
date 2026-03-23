@@ -1,5 +1,5 @@
 {
   "name": "npotify",
-  "description": "A premium Spotify-inspired music streaming app powered by Google Sheets.",
+  "description": "A premium Spotify-inspired music streaming app with full Spotify search and playback integration.",
   "requestFramePermissions": []
 }

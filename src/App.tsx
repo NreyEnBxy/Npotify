@@ -34,7 +34,8 @@ import {
   Clapperboard,
   Volume2,
   VolumeX,
-  ChevronUp
+  ChevronUp,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -78,6 +79,15 @@ const formatAudioUrl = (url: string) => {
   // Handle Dropbox links
   if (url.includes('dropbox.com')) {
     return url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '').replace('&dl=0', '');
+  }
+
+  // Handle YouTube links or other video links that need proxying
+  if (url.includes('youtube.com') || url.includes('youtu.be') || !url.match(/\.(mp3|wav|ogg|m4a|aac)$/i)) {
+    // If it's not a direct audio file, try proxying it
+    // But only if it's an absolute URL
+    if (url.startsWith('http')) {
+      return `/api/stream?url=${encodeURIComponent(url)}`;
+    }
   }
 
   return url;
@@ -130,10 +140,10 @@ interface Song {
   artist: string;
   cover: string;
   url: string;
+  fallbackUrl?: string;
   isReel?: boolean;
   lyrics?: string;
   isApiSong?: boolean;
-  isYouTube?: boolean;
 }
 
 interface User {
@@ -149,56 +159,6 @@ interface AppState {
   id: number | string | null;
   previousPage: string | null;
 }
-
-const fetchApiSongs = async (query: string): Promise<Song[]> => {
-  const songs: Song[] = [];
-  
-  // Fetch from JioSaavn
-  try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.data && Array.isArray(data.data.results)) {
-        const jioSongs = data.data.results.map((song: any) => {
-          const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
-          const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
-          return {
-            id: song.id,
-            title: song.name,
-            artist: song.primaryArtists,
-            cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
-            url: highestQualityDownload?.link ? `/api/proxy-audio?url=${encodeURIComponent(highestQualityDownload.link)}` : "",
-            isApiSong: true
-          };
-        }).filter((s: Song) => s.url !== "");
-        songs.push(...jioSongs);
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch JioSaavn songs", err);
-  }
-
-  // Fetch from YouTube
-  try {
-    const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.results && Array.isArray(data.results)) {
-        const ytSongs = data.results.map((song: any) => ({
-          ...song,
-          url: `/api/youtube/stream?id=${song.id}`,
-          isApiSong: true,
-          isYouTube: true
-        }));
-        songs.push(...ytSongs);
-      }
-    }
-  } catch (err) {
-    console.error("Failed to fetch YouTube songs", err);
-  }
-
-  return songs;
-};
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -765,40 +725,29 @@ export default function App() {
           if (!row || !row.c) return null;
           const title = String(row.c[0]?.v || "Unknown Title");
           const artist = String(row.c[1]?.v || "Unknown Artist");
+          const cover = row.c[2]?.v || "https://picsum.photos/seed/music/400/400";
+          const audioUrl = row.c[3]?.v || "";
           const lyricsVal = String(row.c[4]?.v || "");
+          const videoUrl = row.c[5]?.v || ""; // Column F
+
+          // Prioritize Column F (YouTube) over Column D (MP3) as requested
+          let finalUrl = formatAudioUrl(videoUrl || audioUrl);
+          // If we are using YouTube, set the MP3 URL as a fallback
+          let fallbackUrl = videoUrl && audioUrl ? formatAudioUrl(audioUrl) : "";
 
           return {
             id: index,
             title: title,
             artist: artist,
-            cover: row.c[2]?.v || "https://picsum.photos/seed/music/400/400",
-            url: formatAudioUrl(row.c[3]?.v || ""),
+            cover: cover,
+            url: finalUrl,
+            fallbackUrl: fallbackUrl,
             isReel: title.includes('#'),
             lyrics: lyricsVal
           };
         }).filter(Boolean);
         setSongs(fetchedSongs.filter((s: Song) => s.url !== ""));
         setLoading(false);
-        
-        // Fetch default API songs in background for autoplay
-        fetchApiSongs("top hits").then(apiSongs => {
-          setSongs(prev => {
-            const newSongs = [...prev];
-            let added = false;
-            apiSongs.forEach(apiSong => {
-              // Check if song already exists by title and artist (case-insensitive)
-              const exists = newSongs.some(s => 
-                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
-                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
-              );
-              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
-                newSongs.push(apiSong);
-                added = true;
-              }
-            });
-            return added ? newSongs : prev;
-          });
-        });
       } catch (error: any) {
         console.error("Error fetching songs:", error);
         showToast("Error fetching songs: " + error.message, 'error');
@@ -958,32 +907,8 @@ export default function App() {
   const currentSong = currentSongIndex !== null ? songs.find(s => s.id === currentSongIndex) || null : null;
 
   useEffect(() => {
-    if (searchQuery.length > 2) {
-      setApiSearchLoading(true);
-      const timer = setTimeout(() => {
-        fetchApiSongs(searchQuery).then(apiSongs => {
-          setSongs(prev => {
-            const newSongs = [...prev];
-            let added = false;
-            apiSongs.forEach(apiSong => {
-              const exists = newSongs.some(s => 
-                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
-                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
-              );
-              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
-                newSongs.push(apiSong);
-                added = true;
-              }
-            });
-            return added ? newSongs : prev;
-          });
-          setApiSearchLoading(false);
-        });
-      }, 500);
-      return () => clearTimeout(timer);
-    } else {
-      setApiSearchLoading(false);
-    }
+    // API search is disabled as JioSaavn was removed
+    setApiSearchLoading(false);
   }, [searchQuery]);
 
   const filteredSongs = songs.filter(song => 
@@ -1376,7 +1301,9 @@ export default function App() {
                         <span className={`text-sm font-medium truncate ${currentSongIndex === song.id ? 'text-spotify-green' : 'text-white'}`}>
                           {song.title}
                         </span>
-                        <span className="text-xs text-spotify-gray truncate">{song.artist}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-spotify-gray truncate">{song.artist}</span>
+                        </div>
                       </div>
                       <motion.button
                         whileTap={{ scale: 0.8 }}
@@ -2022,7 +1949,9 @@ export default function App() {
                 <img src={currentSong.cover} className="w-10 h-10 lg:w-14 lg:h-14 rounded object-cover aspect-square" referrerPolicy="no-referrer" />
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs lg:text-sm font-bold truncate">{currentSong.title}</span>
-                  <span className="text-[10px] lg:text-xs text-spotify-gray truncate">{currentSong.artist}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] lg:text-xs text-spotify-gray truncate">{currentSong.artist}</span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-4 px-2">
@@ -2432,17 +2361,39 @@ export default function App() {
             setDuration(audioRef.current.duration || 0);
           }
         }}
-        onError={(e) => {
+        onError={async (e) => {
           const target = e.target as HTMLAudioElement;
           const error = target.error;
           let message = "Unknown playback error";
           
+          if (currentSong && currentSong.fallbackUrl) {
+            // If YouTube fails, switch to MP3
+            setSongs(prev => prev.map(s => s.id === currentSong.id ? { ...s, url: s.fallbackUrl!, fallbackUrl: undefined } : s));
+            showToast("YouTube stream failed, falling back to MP3...", 'info');
+            return;
+          }
+
           if (error) {
             switch (error.code) {
               case 1: message = "Playback aborted"; break;
               case 2: message = "Network error"; break;
               case 3: message = "Audio decoding failed"; break;
-              case 4: message = "Audio source not supported or not found"; break;
+              case 4: 
+                message = "Audio source not supported or not found";
+                // Try to check if it's a 429 error from our proxy
+                if (target.src.includes('/api/stream')) {
+                  try {
+                    const resp = await fetch(target.src, { method: 'HEAD' });
+                    if (resp.status === 429) {
+                      message = "YouTube is rate-limiting the server. Please try again later or use a direct audio link.";
+                    } else if (resp.status === 403) {
+                      message = "YouTube blocked the request (403). The server might be flagged as a bot. Please try again later.";
+                    }
+                  } catch (err) {
+                    // Ignore fetch error
+                  }
+                }
+                break;
             }
           }
           
