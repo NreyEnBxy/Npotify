@@ -133,6 +133,7 @@ interface Song {
   isReel?: boolean;
   lyrics?: string;
   isApiSong?: boolean;
+  isYouTube?: boolean;
 }
 
 interface User {
@@ -150,30 +151,53 @@ interface AppState {
 }
 
 const fetchApiSongs = async (query: string): Promise<Song[]> => {
+  const songs: Song[] = [];
+  
+  // Fetch from JioSaavn
   try {
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) {
-      throw new Error(`API responded with status: ${res.status}`);
-    }
-    const data = await res.json();
-    if (data.data && Array.isArray(data.data.results)) {
-      return data.data.results.map((song: any) => {
-        const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
-        const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
-        return {
-          id: song.id,
-          title: song.name,
-          artist: song.primaryArtists,
-          cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
-          url: highestQualityDownload?.link || "",
-          isApiSong: true
-        };
-      }).filter((s: Song) => s.url !== "");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.data && Array.isArray(data.data.results)) {
+        const jioSongs = data.data.results.map((song: any) => {
+          const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
+          const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
+          return {
+            id: song.id,
+            title: song.name,
+            artist: song.primaryArtists,
+            cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
+            url: highestQualityDownload?.link ? `/api/proxy-audio?url=${encodeURIComponent(highestQualityDownload.link)}` : "",
+            isApiSong: true
+          };
+        }).filter((s: Song) => s.url !== "");
+        songs.push(...jioSongs);
+      }
     }
   } catch (err) {
-    console.error("Failed to fetch API songs", err);
+    console.error("Failed to fetch JioSaavn songs", err);
   }
-  return [];
+
+  // Fetch from YouTube
+  try {
+    const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results && Array.isArray(data.results)) {
+        const ytSongs = data.results.map((song: any) => ({
+          ...song,
+          url: `/api/youtube/stream?id=${song.id}`,
+          isApiSong: true,
+          isYouTube: true
+        }));
+        songs.push(...ytSongs);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch YouTube songs", err);
+  }
+
+  return songs;
 };
 
 export default function App() {
@@ -2409,8 +2433,21 @@ export default function App() {
           }
         }}
         onError={(e) => {
-          console.error("Audio playback error:", e);
-          // You could add a state here to show a toast or error message in the UI
+          const target = e.target as HTMLAudioElement;
+          const error = target.error;
+          let message = "Unknown playback error";
+          
+          if (error) {
+            switch (error.code) {
+              case 1: message = "Playback aborted"; break;
+              case 2: message = "Network error"; break;
+              case 3: message = "Audio decoding failed"; break;
+              case 4: message = "Audio source not supported or not found"; break;
+            }
+          }
+          
+          console.error("Audio playback error:", message, error?.code);
+          showToast(`Playback failed: ${message}`, 'error');
         }}
         onEnded={() => {
           if (repeatMode === 'one') {

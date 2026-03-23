@@ -43,8 +43,9 @@ service cloud.firestore {
 
     function isValidLike(data, userId) {
       return data.keys().hasAll(['songId', 'userId']) &&
-             data.songId is number &&
-             data.userId == userId;
+             (data.songId is number || data.songId is string) &&
+             data.userId == userId &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     // Rules

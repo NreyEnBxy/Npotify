@@ -16,7 +16,7 @@
       "description": "A song liked by a user",
       "type": "object",
       "properties": {
-        "songId": { "type": "integer", "description": "The ID of the liked song" },
+        "songId": { "type": ["integer", "string"], "description": "The ID of the liked song" },
         "userId": { "type": "string", "description": "The UID of the user who liked the song" },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the song was liked" }
       },
