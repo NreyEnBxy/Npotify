@@ -156,75 +156,20 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
       throw new Error(`API responded with status: ${res.status}`);
     }
     const data = await res.json();
-    
-    // Handle different possible response structures from various JioSaavn API forks
-    let results = [];
     if (data.data && Array.isArray(data.data.results)) {
-      results = data.data.results;
-    } else if (data.data && Array.isArray(data.data)) {
-      results = data.data;
-    } else if (Array.isArray(data.results)) {
-      results = data.results;
-    } else if (Array.isArray(data)) {
-      results = data;
+      return data.data.results.map((song: any) => {
+        const highestQualityDownload = song.downloadUrl?.find((d: any) => d.quality === '320kbps') || song.downloadUrl?.[song.downloadUrl.length - 1];
+        const highestQualityImage = song.image?.find((i: any) => i.quality === '500x500') || song.image?.[song.image.length - 1];
+        return {
+          id: song.id,
+          title: song.name,
+          artist: song.primaryArtists,
+          cover: highestQualityImage?.link || "https://picsum.photos/seed/music/400/400",
+          url: highestQualityDownload?.link || "",
+          isApiSong: true
+        };
+      }).filter((s: Song) => s.url !== "");
     }
-
-    return results.map((song: any) => {
-      // Find highest quality download link
-      const downloadUrl = song.downloadUrl || song.download_url || song.download_links || song.downloadLinks;
-      let url = "";
-      if (Array.isArray(downloadUrl)) {
-        const highestQuality = downloadUrl.find((d: any) => d.quality === '320kbps') || 
-                             downloadUrl.find((d: any) => d.quality === '160kbps') ||
-                             downloadUrl[downloadUrl.length - 1];
-        url = highestQuality?.link || highestQuality?.url || "";
-      } else if (typeof downloadUrl === 'string') {
-        url = downloadUrl;
-      } else if (song.url) {
-        url = song.url;
-      } else if (song.link) {
-        url = song.link;
-      }
-
-      // Find highest quality image link
-      const image = song.image || song.images || song.image_url || song.imageUrl;
-      let cover = "https://picsum.photos/seed/music/400/400";
-      if (Array.isArray(image)) {
-        const highestQuality = image.find((i: any) => i.quality === '500x500') || 
-                             image.find((i: any) => i.quality === '150x150') ||
-                             image[image.length - 1];
-        cover = highestQuality?.link || highestQuality?.url || cover;
-      } else if (typeof image === 'string') {
-        cover = image;
-      } else if (song.cover) {
-        cover = song.cover;
-      }
-      
-      // Handle artist being a string, an array of objects, or an array of strings
-      let artistName = "Unknown Artist";
-      const primaryArtists = song.primaryArtists || song.artist || song.artists?.primary || 
-                           song.artists?.[0]?.name || song.singer || song.singers;
-      
-      if (typeof primaryArtists === 'string') {
-        artistName = primaryArtists;
-      } else if (Array.isArray(primaryArtists)) {
-        artistName = primaryArtists.map((a: any) => {
-          if (typeof a === 'string') return a;
-          return a.name || a.title || a.artist || "Unknown";
-        }).join(", ");
-      } else if (primaryArtists && typeof primaryArtists === 'object') {
-        artistName = primaryArtists.name || primaryArtists.title || primaryArtists.artist || "Unknown Artist";
-      }
-
-      return {
-        id: song.id || Math.random().toString(36).substr(2, 9),
-        title: song.name || song.title || song.song_name || "Unknown Title",
-        artist: artistName,
-        cover: cover,
-        url: url,
-        isApiSong: true
-      };
-    }).filter((s: Song) => s.url !== "");
   } catch (err) {
     console.error("Failed to fetch API songs", err);
   }
@@ -270,15 +215,8 @@ export default function App() {
 
     // Rule: From any main section -> Back -> Home
     // We achieve this by replacing the current main section in history instead of pushing a new one
-    const isMainSection = (p: string) => ['library', 'reels', 'search', 'premium', 'home'].includes(p);
+    const isMainSection = (p: string) => ['library', 'reels', 'search', 'premium'].includes(p);
     const shouldReplace = replace || (isMainSection(updatedState.page) && isMainSection(appState.page));
-
-    // Clear ID when switching main sections unless explicitly provided
-    if (isMainSection(updatedState.page) && updatedState.page !== appState.page) {
-      if (!newState.hasOwnProperty('id')) {
-        updatedState.id = null;
-      }
-    }
 
     setAppState(updatedState);
     
@@ -358,7 +296,6 @@ export default function App() {
   }, [appState.id, appState.page]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [apiSearchResults, setApiSearchResults] = useState<Song[]>([]);
   const [apiSearchLoading, setApiSearchLoading] = useState(false);
   const [isFullLyricsOpen, setIsFullLyricsOpen] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -377,16 +314,7 @@ export default function App() {
   const [isSyncingLyrics, setIsSyncingLyrics] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
-  const reelSongs = useMemo(() => {
-    const filtered = songs.filter(s => s.isReel);
-    // Fisher-Yates shuffle for better randomness
-    const shuffled = [...filtered];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }, [songs]);
+  const reelSongs = useMemo(() => songs.filter(s => s.isReel), [songs]);
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -464,7 +392,12 @@ export default function App() {
                   console.log("Auto-play blocked:", err);
                 }
               });
-              // We no longer update the URL automatically as the user scrolls
+              // Update selectedReelId when it becomes visible
+              const reelId = Object.keys(videoRefs.current).find(key => videoRefs.current[key] === video);
+              if (reelId) {
+                const numericId = isNaN(Number(reelId)) ? reelId : Number(reelId);
+                setSelectedReelId(numericId);
+              }
             } else {
               video.pause();
             }
@@ -797,8 +730,8 @@ export default function App() {
           setLoading(false);
           return;
         }
-        const url = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
-        const response = await fetch(url, { cache: 'no-store' });
+        const url = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:json`;
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -841,8 +774,6 @@ export default function App() {
             });
             return added ? newSongs : prev;
           });
-        }).catch(err => {
-          console.error("Initial API songs fetch failed:", err);
         });
       } catch (error: any) {
         console.error("Error fetching songs:", error);
@@ -1006,50 +937,35 @@ export default function App() {
     if (searchQuery.length > 2) {
       setApiSearchLoading(true);
       const timer = setTimeout(() => {
-      fetchApiSongs(searchQuery).then(apiSongs => {
-        setApiSearchResults(apiSongs);
-        // Also add them to the main songs array so they can be played/liked
-        setSongs(prev => {
-          const newSongs = [...prev];
-          let added = false;
-          apiSongs.forEach(apiSong => {
-            const exists = newSongs.some(s => s.id === apiSong.id);
-            if (!exists) {
-              newSongs.push(apiSong);
-              added = true;
-            }
+        fetchApiSongs(searchQuery).then(apiSongs => {
+          setSongs(prev => {
+            const newSongs = [...prev];
+            let added = false;
+            apiSongs.forEach(apiSong => {
+              const exists = newSongs.some(s => 
+                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
+                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
+              );
+              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
+                newSongs.push(apiSong);
+                added = true;
+              }
+            });
+            return added ? newSongs : prev;
           });
-          return added ? newSongs : prev;
+          setApiSearchLoading(false);
         });
-      }).catch(err => {
-        console.error("API search error:", err);
-      }).finally(() => {
-        setApiSearchLoading(false);
-      });
       }, 500);
       return () => clearTimeout(timer);
     } else {
       setApiSearchLoading(false);
-      setApiSearchResults([]);
     }
   }, [searchQuery]);
 
-  const filteredSongs = useMemo(() => {
-    const localMatches = songs.filter(song => 
-      !song.isApiSong && (
-        song.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        song.artist.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    );
-    
-    // Combine local matches with current API search results
-    // Use a Map to avoid duplicates if a song is in both
-    const combined = new Map();
-    localMatches.forEach(s => combined.set(s.id, s));
-    apiSearchResults.forEach(s => combined.set(s.id, s));
-    
-    return Array.from(combined.values());
-  }, [songs, searchQuery, apiSearchResults]);
+  const filteredSongs = songs.filter(song => 
+    song.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    song.artist.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const SidebarContent = ({ isPersistent = false }: { isPersistent?: boolean }) => (
     <div className="flex flex-col h-full">
@@ -1141,14 +1057,6 @@ export default function App() {
             Log In / Sign Up
           </button>
         )}
-        <div className="mt-8 pt-4 border-t border-white/5">
-          <p className="text-[10px] text-spotify-gray uppercase tracking-widest font-medium opacity-50">
-            Last Updated: Mar 23, 06:26 UTC
-          </p>
-          <p className="text-[8px] text-spotify-gray/30 mt-1">
-            Build v1.0.8
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -1307,6 +1215,54 @@ export default function App() {
               </div>
             </section>
 
+            {/* Reels on Home */}
+            {(loading || reelSongs.length > 0) && (
+              <section className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-bold tracking-tight">Reels</h2>
+                  <button 
+                    onClick={() => navigateTo({ page: 'reels' })}
+                    className="text-spotify-gray hover:text-white text-sm font-bold transition-colors"
+                  >
+                    Show all
+                  </button>
+                </div>
+                <div 
+                  onWheel={handleHorizontalScroll}
+                  className="flex overflow-x-auto gap-3 scrollbar-hide -mx-4 px-4"
+                >
+                  {loading ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="min-w-[120px] max-w-[120px] aspect-[9/16] shrink-0" />
+                    ))
+                  ) : (
+                    reelSongs.map((reel, i) => (
+                      <div 
+                        key={i} 
+                        onClick={() => {
+                          navigateTo({ page: 'reels', id: reel.id.toString(), previousPage: 'home' });
+                        }}
+                        className="min-w-[120px] max-w-[120px] aspect-[9/16] relative rounded-lg overflow-hidden cursor-pointer group shrink-0"
+                      >
+                        <img 
+                          src={reel.cover} 
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                          referrerPolicy="no-referrer" 
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <Clapperboard size={12} className="text-white" />
+                            <span className="text-[10px] font-bold text-white truncate">{reel.artist}</span>
+                          </div>
+                          <h3 className="text-[10px] text-white/80 line-clamp-1">{reel.title}</h3>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Albums featuring songs you like */}
             <section className="mb-8">
               <h2 className="text-2xl font-bold mb-4 tracking-tight">Albums featuring songs you like</h2>
@@ -1374,7 +1330,7 @@ export default function App() {
 
             {searchQuery ? (
               <div className="space-y-4">
-                {loading || apiSearchLoading ? (
+                {loading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <div key={i} className="flex items-center gap-3">
                       <Skeleton className="w-12 h-12 rounded" />
