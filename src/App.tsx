@@ -1116,6 +1116,14 @@ export default function App() {
             Log In / Sign Up
           </button>
         )}
+        <div className="mt-8 pt-4 border-t border-white/5">
+          <p className="text-[10px] text-spotify-gray uppercase tracking-widest font-medium opacity-50">
+            Last Updated: Mar 23, 05:22 UTC
+          </p>
+          <p className="text-[8px] text-spotify-gray/30 mt-1">
+            Build v1.0.5
+          </p>
+        </div>
       </div>
     </div>
   );
