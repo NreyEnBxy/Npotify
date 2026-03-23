@@ -171,22 +171,28 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
 
     return results.map((song: any) => {
       // Find highest quality download link
-      const downloadUrl = song.downloadUrl || song.download_url || song.download_links;
+      const downloadUrl = song.downloadUrl || song.download_url || song.download_links || song.downloadLinks;
       let url = "";
       if (Array.isArray(downloadUrl)) {
-        const highestQuality = downloadUrl.find((d: any) => d.quality === '320kbps') || downloadUrl[downloadUrl.length - 1];
+        const highestQuality = downloadUrl.find((d: any) => d.quality === '320kbps') || 
+                             downloadUrl.find((d: any) => d.quality === '160kbps') ||
+                             downloadUrl[downloadUrl.length - 1];
         url = highestQuality?.link || highestQuality?.url || "";
       } else if (typeof downloadUrl === 'string') {
         url = downloadUrl;
       } else if (song.url) {
         url = song.url;
+      } else if (song.link) {
+        url = song.link;
       }
 
       // Find highest quality image link
-      const image = song.image || song.images || song.image_url;
+      const image = song.image || song.images || song.image_url || song.imageUrl;
       let cover = "https://picsum.photos/seed/music/400/400";
       if (Array.isArray(image)) {
-        const highestQuality = image.find((i: any) => i.quality === '500x500') || image[image.length - 1];
+        const highestQuality = image.find((i: any) => i.quality === '500x500') || 
+                             image.find((i: any) => i.quality === '150x150') ||
+                             image[image.length - 1];
         cover = highestQuality?.link || highestQuality?.url || cover;
       } else if (typeof image === 'string') {
         cover = image;
@@ -196,22 +202,23 @@ const fetchApiSongs = async (query: string): Promise<Song[]> => {
       
       // Handle artist being a string, an array of objects, or an array of strings
       let artistName = "Unknown Artist";
-      const primaryArtists = song.primaryArtists || song.artist || song.artists?.primary || song.artists?.[0]?.name;
+      const primaryArtists = song.primaryArtists || song.artist || song.artists?.primary || 
+                           song.artists?.[0]?.name || song.singer || song.singers;
       
       if (typeof primaryArtists === 'string') {
         artistName = primaryArtists;
       } else if (Array.isArray(primaryArtists)) {
         artistName = primaryArtists.map((a: any) => {
           if (typeof a === 'string') return a;
-          return a.name || a.title || "Unknown";
+          return a.name || a.title || a.artist || "Unknown";
         }).join(", ");
       } else if (primaryArtists && typeof primaryArtists === 'object') {
-        artistName = primaryArtists.name || primaryArtists.title || "Unknown Artist";
+        artistName = primaryArtists.name || primaryArtists.title || primaryArtists.artist || "Unknown Artist";
       }
 
       return {
         id: song.id || Math.random().toString(36).substr(2, 9),
-        title: song.name || song.title || "Unknown Title",
+        title: song.name || song.title || song.song_name || "Unknown Title",
         artist: artistName,
         cover: cover,
         url: url,
@@ -351,6 +358,7 @@ export default function App() {
   }, [appState.id, appState.page]);
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [apiSearchResults, setApiSearchResults] = useState<Song[]>([]);
   const [apiSearchLoading, setApiSearchLoading] = useState(false);
   const [isFullLyricsOpen, setIsFullLyricsOpen] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -833,6 +841,8 @@ export default function App() {
             });
             return added ? newSongs : prev;
           });
+        }).catch(err => {
+          console.error("Initial API songs fetch failed:", err);
         });
       } catch (error: any) {
         console.error("Error fetching songs:", error);
@@ -996,35 +1006,50 @@ export default function App() {
     if (searchQuery.length > 2) {
       setApiSearchLoading(true);
       const timer = setTimeout(() => {
-        fetchApiSongs(searchQuery).then(apiSongs => {
-          setSongs(prev => {
-            const newSongs = [...prev];
-            let added = false;
-            apiSongs.forEach(apiSong => {
-              const exists = newSongs.some(s => 
-                s.title.toLowerCase() === apiSong.title.toLowerCase() && 
-                s.artist.toLowerCase() === apiSong.artist.toLowerCase()
-              );
-              if (!exists && !newSongs.some(s => s.id === apiSong.id)) {
-                newSongs.push(apiSong);
-                added = true;
-              }
-            });
-            return added ? newSongs : prev;
+      fetchApiSongs(searchQuery).then(apiSongs => {
+        setApiSearchResults(apiSongs);
+        // Also add them to the main songs array so they can be played/liked
+        setSongs(prev => {
+          const newSongs = [...prev];
+          let added = false;
+          apiSongs.forEach(apiSong => {
+            const exists = newSongs.some(s => s.id === apiSong.id);
+            if (!exists) {
+              newSongs.push(apiSong);
+              added = true;
+            }
           });
-          setApiSearchLoading(false);
+          return added ? newSongs : prev;
         });
+      }).catch(err => {
+        console.error("API search error:", err);
+      }).finally(() => {
+        setApiSearchLoading(false);
+      });
       }, 500);
       return () => clearTimeout(timer);
     } else {
       setApiSearchLoading(false);
+      setApiSearchResults([]);
     }
   }, [searchQuery]);
 
-  const filteredSongs = songs.filter(song => 
-    song.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    song.artist.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSongs = useMemo(() => {
+    const localMatches = songs.filter(song => 
+      !song.isApiSong && (
+        song.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        song.artist.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    );
+    
+    // Combine local matches with current API search results
+    // Use a Map to avoid duplicates if a song is in both
+    const combined = new Map();
+    localMatches.forEach(s => combined.set(s.id, s));
+    apiSearchResults.forEach(s => combined.set(s.id, s));
+    
+    return Array.from(combined.values());
+  }, [songs, searchQuery, apiSearchResults]);
 
   const SidebarContent = ({ isPersistent = false }: { isPersistent?: boolean }) => (
     <div className="flex flex-col h-full">
